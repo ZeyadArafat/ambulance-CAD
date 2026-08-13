@@ -1,10 +1,12 @@
 import json
 import os
+import asyncio
 
 import paho.mqtt.client as mqtt
 
 from ..database import SessionLocal
 from ..models import Ambulance
+from .websocket_manager import manager
 
 
 MQTT_HOST = os.getenv("MQTT_HOST", "localhost")
@@ -86,6 +88,21 @@ def on_message(client, userdata, message):
                 )
 
             db.commit()
+
+            asyncio.run(
+                manager.broadcast(
+                    {
+                        "type": "ambulance_update",
+                        "ambulance": {
+                            "id": ambulance.id,
+                            "code": ambulance.code,
+                            "latitude": ambulance.latitude,
+                            "longitude": ambulance.longitude,
+                            "status": ambulance.status,
+                        },
+                    }
+            )
+)
 
         finally:
             db.close()
