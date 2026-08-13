@@ -1,48 +1,176 @@
-from math import radians, sin, cos, sqrt, atan2
+from sqlalchemy.orm import Session
+from datetime import datetime
 
 
-def calculate_distance_km(
-    lat1: float,
-    lon1: float,
-    lat2: float,
-    lon2: float,
-) -> float:
-    """
-    Calculate the approximate distance between two GPS coordinates
-    using the Haversine formula.
+from ..models import Ambulance, Incident,Dispatch
+from .routing_service import get_route
 
-    Returns:
-        Distance in kilometers.
-    """
 
-    earth_radius_km = 6371.0
+PRIORITY_WEIGHT = {
+    "critical": 1.5,
+    "high": 1.3,
+    "medium": 1.0,
+    "low": 0.8,
+}
 
-    lat1_rad = radians(lat1)
-    lat2_rad = radians(lat2)
 
-    delta_lat = radians(lat2 - lat1)
-    delta_lon = radians(lon2 - lon1)
+def get_available_ambulances(db: Session):
 
-    a = (
-        sin(delta_lat / 2) ** 2
-        + cos(lat1_rad)
-        * cos(lat2_rad)
-        * sin(delta_lon / 2) ** 2
+    return (
+        db.query(Ambulance)
+        .filter(
+            Ambulance.status == "available"
+        )
+        .all()
     )
 
-    c = 2 * atan2(sqrt(a), sqrt(1 - a))
 
-    return earth_radius_km * c
+def calculate_score(
+    eta_minutes: float,
+    ambulance: Ambulance,
+    incident: Incident,
+):
+
+    score = eta_minutes
+
+    priority_multiplier = PRIORITY_WEIGHT.get(
+        incident.priority,
+        1.0,
+    )
+
+    # Critical incidents benefit more
+    # from advanced life support.
+    if (
+        incident.priority == "critical"
+        and ambulance.ambulance_type
+        == "advanced_life_support"
+    ):
+        score *= 0.7
+
+    elif (
+        incident.priority == "critical"
+        and ambulance.ambulance_type
+        == "basic_life_support"
+    ):
+        score *= 1.3
+
+    score /= priority_multiplier
+
+    return round(score, 2)
 
 
-def estimate_eta_minutes(distance_km: float) -> float:
-    """
-    Estimate ambulance travel time.
+async def recommend_ambulances(
+    db: Session,
+    incident: Incident,
+):
 
-    This is only a temporary approximation.
-    Later we will replace it with OSRM road-network ETA.
-    """
+    ambulances = get_available_ambulances(db)
 
-    assumed_speed_kmh = 40
+    recommendations = []
 
-    return (distance_km / assumed_speed_kmh) * 60
+    for ambulance in ambulances:
+
+        route = await get_route(
+            ambulance.latitude,
+            ambulance.longitude,
+            incident.latitude,
+            incident.longitude,
+        )
+
+        if not route:
+            continue
+
+        eta_minutes = route["duration_minutes"]
+
+        distance_km = route["distance_km"]
+
+        score = calculate_score(
+            eta_minutes,
+            ambulance,
+            incident,
+        )
+
+        recommendations.append(
+            {
+                "ambulance_id": ambulance.id,
+                "code": ambulance.code,
+                "ambulance_type":
+                    ambulance.ambulance_type,
+                "eta_minutes":
+                    round(eta_minutes, 1),
+                "distance_km":
+                    round(distance_km, 2),
+                "score": score,
+            }
+        )
+
+    recommendations.sort(
+        key=lambda x: x["score"]
+    )
+
+    return recommendations
+
+
+def dispatch_ambulance(
+    db: Session,
+    incident_id: int,
+    ambulance_id: int,
+):
+
+    incident = (
+        db.query(Incident)
+        .filter(
+            Incident.id == incident_id
+        )
+        .first()
+    )
+
+    if not incident:
+        raise ValueError(
+            "Incident not found"
+        )
+
+    ambulance = (
+        db.query(Ambulance)
+        .filter(
+            Ambulance.id == ambulance_id
+        )
+        .first()
+    )
+
+    if not ambulance:
+        raise ValueError(
+            "Ambulance not found"
+        )
+
+    if ambulance.status != "available":
+        raise ValueError(
+            "Ambulance is not available"
+        )
+
+    if incident.status not in [
+        "new",
+        "pending",
+    ]:
+        raise ValueError(
+            "Incident has already been dispatched"
+        )
+
+    dispatch = Dispatch(
+        incident_id=incident.id,
+        ambulance_id=ambulance.id,
+        status="dispatched",
+        dispatched_at=datetime.utcnow(),
+    )
+
+    db.add(dispatch)
+
+    ambulance.status = "dispatched"
+
+    incident.status = "dispatched"
+
+    db.commit()
+
+    db.refresh(dispatch)
+
+    return dispatch

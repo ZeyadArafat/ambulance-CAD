@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from geoalchemy2 import Geometry
-from sqlalchemy import DateTime, Float, Integer, String, Text
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .database import Base
@@ -53,3 +53,43 @@ class Hospital(Base):
     longitude: Mapped[float]
     emergency_capacity: Mapped[int] = mapped_column(Integer, default=0)
     icu_available: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class Dispatch(Base):
+    __tablename__ = "dispatches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+    incident_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("incidents.id"),
+        nullable=False,
+    )
+
+    ambulance_id = Column(
+        Integer,
+        ForeignKey("ambulances.id"),
+        nullable=False,
+    )
+
+    status = Column(
+        String,
+        default="dispatched",
+        nullable=False,
+    )
+
+    dispatched_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+
+    arrived_at = Column(
+        DateTime,
+        nullable=True,
+    )
+
+    completed_at = Column(
+        DateTime,
+        nullable=True,
+    )
