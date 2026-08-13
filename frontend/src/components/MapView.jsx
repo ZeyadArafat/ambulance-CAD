@@ -5,10 +5,46 @@ import {
     Popup,
 } from "react-leaflet";
 
-import "leaflet/dist/leaflet.css";
+import { divIcon } from "leaflet";
 
 
-function MapView({ ambulances }) {
+// ===============================
+// Ambulance Marker
+// ===============================
+
+const ambulanceIcon = divIcon({
+    className: "",
+    html: `
+        <div class="ambulance-marker">
+            🚑
+        </div>
+    `,
+    iconSize: [40, 40],
+    iconAnchor: [20, 20],
+});
+
+
+// ===============================
+// Incident Marker
+// ===============================
+
+const incidentIcon = divIcon({
+    className: "",
+    html: `
+        <div class="incident-marker">
+            !
+        </div>
+    `,
+    iconSize: [34, 34],
+    iconAnchor: [17, 17],
+});
+
+
+function MapView({
+    ambulances,
+    incidents,
+    onSelectIncident,
+}) {
 
     const cairo = [30.0444, 31.2357];
 
@@ -23,23 +59,30 @@ function MapView({ ambulances }) {
         >
 
             <TileLayer
-                attribution='&copy; OpenStreetMap contributors'
+                attribution="&copy; OpenStreetMap contributors"
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
+
+
+            {/* ========================= */}
+            {/* AMBULANCES */}
+            {/* ========================= */}
 
             {ambulances.map((ambulance) => (
 
                 <Marker
-                    key={ambulance.id}
+                    key={`ambulance-${ambulance.id}`}
                     position={[
-                        ambulance.latitude,
-                        ambulance.longitude,
+                        Number(ambulance.latitude),
+                        Number(ambulance.longitude),
                     ]}
+                    icon={ambulanceIcon}
                 >
 
                     <Popup>
+
                         <strong>
-                            {ambulance.code}
+                            🚑 {ambulance.code}
                         </strong>
 
                         <br />
@@ -47,6 +90,60 @@ function MapView({ ambulances }) {
                         Status:
                         {" "}
                         {ambulance.status}
+
+                        <br />
+
+                        Type:
+                        {" "}
+                        {ambulance.ambulance_type}
+
+                    </Popup>
+
+                </Marker>
+
+            ))}
+
+
+            {/* ========================= */}
+            {/* INCIDENTS */}
+            {/* ========================= */}
+
+            {incidents.map((incident) => (
+
+                <Marker
+                    key={`incident-${incident.id}`}
+                    position={[
+                        Number(incident.latitude),
+                        Number(incident.longitude),
+                    ]}
+                    icon={incidentIcon}
+                    eventHandlers={{
+                        click: () =>
+                            onSelectIncident(incident),
+                    }}
+                >
+
+                    <Popup>
+
+                        <strong>
+                            🚨 Incident #{incident.id}
+                        </strong>
+
+                        <br />
+
+                        Priority:
+                        {" "}
+                        {incident.priority}
+
+                        <br />
+
+                        Type:
+                        {" "}
+                        {incident.incident_type}
+
+                        <br />
+
+                        {incident.description}
 
                     </Popup>
 
@@ -57,5 +154,6 @@ function MapView({ ambulances }) {
         </MapContainer>
     );
 }
+
 
 export default MapView;
