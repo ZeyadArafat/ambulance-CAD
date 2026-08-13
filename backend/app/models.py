@@ -25,7 +25,7 @@ class Ambulance(Base):
     location: Mapped[object | None] = mapped_column(
         Geometry("POINT", srid=4326), nullable=True
     )
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
 
 class Incident(Base):

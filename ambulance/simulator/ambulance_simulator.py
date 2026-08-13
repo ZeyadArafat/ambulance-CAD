@@ -85,10 +85,28 @@ try:
             qos=1,
         )
 
-        print(
-            f"Location published: "
-            f"{latitude}, {longitude}"
+        status_topic = (
+            f"cad/ambulance/"
+            f"{AMBULANCE_CODE}/status"
         )
+
+        status_payload = {
+            "ambulance": AMBULANCE_CODE,
+            "status": status,
+        }
+
+        client.publish(
+            status_topic,
+            json.dumps(status_payload),
+            qos=1,
+        )
+
+        print(f"telemetry published:"
+              f"{latitude}, {longitude} |"
+              f" {status}")
+
+        latitude += 0.0001
+        longitude += 0.0001
 
         time.sleep(5)
 
