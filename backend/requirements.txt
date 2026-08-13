@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg[binary]
+geoalchemy2
+pydantic
+paho-mqtt
+httpx
