@@ -69,13 +69,15 @@ async def recommend_ambulances(
     recommendations = []
 
     for ambulance in ambulances:
-
-        route = await get_route(
-            ambulance.latitude,
-            ambulance.longitude,
-            incident.latitude,
-            incident.longitude,
-        )
+        try:
+            route = await get_route(
+                ambulance.latitude,
+                ambulance.longitude,
+                incident.latitude,
+                incident.longitude,
+            )
+        except Exception:
+            continue
 
         if not route:
             continue
@@ -115,6 +117,7 @@ def dispatch_ambulance(
     db: Session,
     incident_id: int,
     ambulance_id: int,
+    manual: bool = False,
 ):
 
     incident = (

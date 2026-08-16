@@ -1,74 +1,49 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 function DispatchPanel({
     incident,
     recommendations,
     onDispatch,
     routeInfo,
+    ambulances = [],
 }) {
 
-    const [dispatching, setDispatching] =useState(false);
+    const [dispatching, setDispatching] = useState(false);
+    const [manualAmbulanceId, setManualAmbulanceId] = useState("");
 
-    const dispatchAmbulance = async (
-    incidentId,
-    ambulanceId
-) => {
-    
-
-    if (dispatching) {
-        return;
-    }
-
-    setDispatching(true);
-
-    try {
-
-        const response = await fetch(
-            "http://localhost:8000/api/dispatch/dispatch",
-            {
-                method: "POST",
-
-                headers: {
-                    "Content-Type": "application/json",
-                },
-
-                body: JSON.stringify({
-                    incident_id: incidentId,
-                    ambulance_id: ambulanceId,
-                }),
-            }
-        );
-
-        if (!response.ok) {
-
-            const error =
-                await response.json();
-
-            throw new Error(
-                error.detail ||
-                "Dispatch failed"
-            );
+    useEffect(() => {
+        if (!incident) {
+            setManualAmbulanceId("");
+            return;
         }
 
-        const data = await response.json();
-        onDispatch(data);
-        console.log("Dispatch successful:", data);
+        const preferred = ambulances.find(
+            (ambulance) => ambulance.status === "available"
+        ) || ambulances[0];
 
+        if (preferred) {
+            setManualAmbulanceId(String(preferred.id));
+        } else {
+            setManualAmbulanceId("");
+        }
+    }, [incident, ambulances]);
 
-    } catch (error) {
+    const dispatchAmbulance = async (ambulanceId, isManual = false) => {
+        if (dispatching || !incident) {
+            return;
+        }
 
-        console.error(
-            "Dispatch error:",
-            error
-        );
+        setDispatching(true);
 
-        alert(error.message);
-
-    } finally {
-
-        setDispatching(false);
-    }
-};
+        try {
+            await onDispatch(ambulanceId, isManual);
+        } catch (error) {
+            console.error("Dispatch error:", error);
+            alert(error.message || "Dispatch failed");
+        } finally {
+            setDispatching(false);
+        }
+    };
 
     if (!incident && !routeInfo) {
 
@@ -170,7 +145,7 @@ function DispatchPanel({
 
                         {!best && (
                             <p>
-                                No available ambulances.
+                                No route-based recommendation available right now.
                             </p>
                         )}
 
@@ -198,17 +173,64 @@ function DispatchPanel({
                                     disabled={dispatching}
                                     onClick={() =>
                                         dispatchAmbulance(
-                                            incident.id,
-                                            best.ambulance_id
+                                            best.ambulance_id,
+                                            false
                                         )
                                     }
                                 >
                                     {dispatching
                                         ? "DISPATCHING..."
-                                        : "DISPATCH"}
+                                        : "DISPATCH RECOMMENDATION"}
                                 </button>
                             </>
                         )}
+                    </div>
+
+                    <div className="manual-dispatch">
+                        <h3>
+                            Manual Dispatch
+                        </h3>
+
+                        <select
+                            value={manualAmbulanceId}
+                            onChange={(event) =>
+                                setManualAmbulanceId(event.target.value)
+                            }
+                            disabled={dispatching}
+                        >
+                            <option value="">
+                                Select ambulance
+                            </option>
+                            {ambulances
+                                .filter(
+                                    (ambulance) =>
+                                        ambulance.status === "available"
+                                )
+                                .map((ambulance) => (
+                                    <option
+                                        key={ambulance.id}
+                                        value={ambulance.id}
+                                    >
+                                        {ambulance.code} - {ambulance.status}
+                                    </option>
+                                ))}
+                        </select>
+
+                        <button
+                            disabled={
+                                dispatching || !manualAmbulanceId
+                            }
+                            onClick={() =>
+                                dispatchAmbulance(
+                                    Number(manualAmbulanceId),
+                                    true
+                                )
+                            }
+                        >
+                            {dispatching
+                                ? "DISPATCHING..."
+                                : "DISPATCH SELECTED AMBULANCE"}
+                        </button>
                     </div>
                 </>
             )}

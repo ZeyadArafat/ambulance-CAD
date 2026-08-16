@@ -129,6 +129,7 @@ async def recommend(
 class DispatchRequest(BaseModel):
     incident_id: int
     ambulance_id: int
+    manual: bool = False
 
 
 @router.post("/dispatch")
@@ -141,6 +142,7 @@ def dispatch_ambulance_endpoint(
             db,
             request.incident_id,
             request.ambulance_id,
+            manual=request.manual,
         )
 
         return {

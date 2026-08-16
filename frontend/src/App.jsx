@@ -245,7 +245,8 @@ const selectIncident = async (incident) => {
      */
 
     const dispatchAmbulance = async (
-        ambulanceId
+        ambulanceId,
+        manual = false
     ) => {
 
         if (!selectedIncident) {
@@ -270,9 +271,17 @@ const selectIncident = async (incident) => {
 
                         ambulance_id:
                             ambulanceId,
+                        manual,
                     }),
                 }
             );
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(
+                    errorData.detail || "Dispatch failed"
+                );
+            }
 
             const data =
                 await response.json();
@@ -319,12 +328,15 @@ const selectIncident = async (incident) => {
             setRouteInfo(null);
             setRecommendations([]);
 
+            return data;
+
         } catch (error) {
 
             console.error(
                 "Dispatch failed:",
                 error
             );
+            throw error;
 
         }
     };
@@ -383,6 +395,7 @@ const selectIncident = async (incident) => {
                 recommendations={recommendations}
                 onDispatch={dispatchAmbulance}
                 routeInfo={routeInfo}
+                ambulances={ambulances}
             />
 
         </div>
