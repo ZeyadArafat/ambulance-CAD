@@ -3,6 +3,7 @@ import {
     TileLayer,
     Marker,
     Popup,
+    Polyline,
 } from "react-leaflet";
 
 import { divIcon } from "leaflet";
@@ -44,9 +45,11 @@ function MapView({
     ambulances,
     incidents,
     onSelectIncident,
+    routeCoordinates = [],
 }) {
 
     const cairo = [30.0444, 31.2357];
+    const mappedRouteCoordinates = routeCoordinates.map(([lng, lat]) => [lat, lng]);
 
     return (
         <MapContainer
@@ -103,6 +106,17 @@ function MapView({
 
             ))}
 
+
+            {mappedRouteCoordinates.length > 0 && (
+                <Polyline
+                    positions={mappedRouteCoordinates}
+                    pathOptions={{
+                        color: "#f59e0b",
+                        weight: 5,
+                        opacity: 0.9,
+                    }}
+                />
+            )}
 
             {/* ========================= */}
             {/* INCIDENTS */}

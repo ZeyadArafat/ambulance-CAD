@@ -210,7 +210,13 @@ body,
     padding: 10px;
     margin-bottom: 8px;
     background: #111827;
+    border: 1px solid transparent;
     border-radius: 6px;
+    cursor: pointer;
+}
+
+.ambulance-card.selected {
+    border-color: #f59e0b;
 }
 
 .ambulance-icon {

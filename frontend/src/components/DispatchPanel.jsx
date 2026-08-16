@@ -4,6 +4,7 @@ function DispatchPanel({
     incident,
     recommendations,
     onDispatch,
+    routeInfo,
 }) {
 
     const [dispatching, setDispatching] =useState(false);
@@ -69,7 +70,7 @@ function DispatchPanel({
     }
 };
 
-    if (!incident) {
+    if (!incident && !routeInfo) {
 
         return (
             <div className="dispatch-panel">
@@ -79,7 +80,7 @@ function DispatchPanel({
                 </div>
 
                 <div className="empty-state">
-                    Select an incident to begin dispatch
+                    Select an incident or ambulance to view its route
                 </div>
 
             </div>
@@ -93,99 +94,124 @@ function DispatchPanel({
 
     return (
         <div className="dispatch-panel">
-
-            <div className="panel-title">
-                DISPATCH
-            </div>
-
-            <div className="dispatch-info">
-
-                <div>
-                    <strong>
-                        Incident
-                    </strong>
-
-                    <span>
-                        INC-{String(incident.id).padStart(3, "0")}
-                    </span>
+            {!incident && !routeInfo && (
+                <div className="empty-state">
+                    Select an incident or ambulance to view its route
                 </div>
+            )}
 
-                <div>
-                    <strong>
-                        Priority
-                    </strong>
+            {routeInfo && (
+                <div className="route-summary">
+                    <div className="panel-title">
+                        ROUTE STATUS
+                    </div>
 
-                    <span className={`priority ${incident.priority}`}>
-                        {incident.priority.toUpperCase()}
-                    </span>
+                    <div className="dispatch-info">
+                        <div>
+                            <strong>Ambulance</strong>
+                            <span>{routeInfo.ambulance_code}</span>
+                        </div>
+
+                        <div>
+                            <strong>Distance</strong>
+                            <span>{routeInfo.distance_km} km</span>
+                        </div>
+
+                        <div>
+                            <strong>ETA</strong>
+                            <span>{routeInfo.eta_minutes} min</span>
+                        </div>
+                    </div>
                 </div>
+            )}
 
-                <div>
-                    <strong>
-                        Type
-                    </strong>
+            {incident && (
+                <>
+                    <div className="panel-title">
+                        DISPATCH
+                    </div>
 
-                    <span>
-                        {incident.incident_type}
-                    </span>
-                </div>
-
-            </div>
-
-            <div className="recommendation">
-
-                <h3>
-                    Recommended Ambulance
-                </h3>
-
-                {!best && (
-                    <p>
-                        No available ambulances.
-                    </p>
-                )}
-
-                {best && (
-                    <>
-                        <div className="recommended-ambulance">
-
-                            🚑
-
+                    <div className="dispatch-info">
+                        <div>
                             <strong>
-                                {best.code}
+                                Incident
                             </strong>
 
+                            <span>
+                                INC-{String(incident.id).padStart(3, "0")}
+                            </span>
                         </div>
 
-                        <div className="route-info">
+                        <div>
+                            <strong>
+                                Priority
+                            </strong>
 
-                            <span>
-                                {best.distance_km} km
+                            <span className={`priority ${incident.priority}`}>
+                                {incident.priority.toUpperCase()}
                             </span>
-
-                            <span>
-                                {best.eta_minutes} min ETA
-                            </span>
-
                         </div>
 
-                        <button
-                            disabled={dispatching}
-                            onClick={() =>
-                                dispatchAmbulance(
-                                    incident.id,
-                                    best.ambulance_id
-                                )
-                            }
-                        >
-                            {dispatching
-                                ? "DISPATCHING..."
-                                : "DISPATCH"}
-                        </button>
-                    </>
-                )}
+                        <div>
+                            <strong>
+                                Type
+                            </strong>
 
-            </div>
+                            <span>
+                                {incident.incident_type}
+                            </span>
+                        </div>
+                    </div>
 
+                    <div className="recommendation">
+                        <h3>
+                            Recommended Ambulance
+                        </h3>
+
+                        {!best && (
+                            <p>
+                                No available ambulances.
+                            </p>
+                        )}
+
+                        {best && (
+                            <>
+                                <div className="recommended-ambulance">
+                                    🚑
+
+                                    <strong>
+                                        {best.code}
+                                    </strong>
+                                </div>
+
+                                <div className="route-info">
+                                    <span>
+                                        {best.distance_km} km
+                                    </span>
+
+                                    <span>
+                                        {best.eta_minutes} min ETA
+                                    </span>
+                                </div>
+
+                                <button
+                                    disabled={dispatching}
+                                    onClick={() =>
+                                        dispatchAmbulance(
+                                            incident.id,
+                                            best.ambulance_id
+                                        )
+                                    }
+                                >
+                                    {dispatching
+                                        ? "DISPATCHING..."
+                                        : "DISPATCH"}
+                                </button>
+                            </>
+                        )}
+                    </div>
+                </>
+            )}
         </div>
     );
 }

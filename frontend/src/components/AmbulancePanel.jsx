@@ -1,4 +1,4 @@
-function AmbulancePanel({ ambulances }) {
+function AmbulancePanel({ ambulances, selectedAmbulance, onSelectAmbulance }) {
 
     const getStatusClass = (status) => {
 
@@ -31,8 +31,9 @@ function AmbulancePanel({ ambulances }) {
             {ambulances.map((ambulance) => (
 
                 <div
-                    className="ambulance-card"
+                    className={`ambulance-card ${selectedAmbulance?.id === ambulance.id ? "selected" : ""}`}
                     key={ambulance.id}
+                    onClick={() => onSelectAmbulance(ambulance)}
                 >
 
                     <div className="ambulance-icon">

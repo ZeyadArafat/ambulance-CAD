@@ -20,6 +20,11 @@ function App() {
     const [selectedIncident, setSelectedIncident] =
         useState(null);
 
+    const [selectedAmbulance, setSelectedAmbulance] =
+        useState(null);
+
+    const [routeInfo, setRouteInfo] = useState(null);
+
     const [recommendations, setRecommendations] =
         useState([]);
 
@@ -111,6 +116,55 @@ function App() {
 
     }, []);
 
+    useEffect(() => {
+        const loadRoute = async () => {
+            try {
+                if (selectedIncident?.assigned_ambulance_id) {
+                    const response = await fetch(
+                        `${API_URL}/api/dispatch/route/incident/${selectedIncident.id}`
+                    );
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        setRouteInfo(data);
+                        return;
+                    }
+                }
+
+                if (selectedAmbulance) {
+                    const response = await fetch(
+                        `${API_URL}/api/dispatch/route/ambulance/${selectedAmbulance.id}`
+                    );
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        setRouteInfo(data);
+                        return;
+                    }
+                }
+            } catch (error) {
+                console.error("Failed to fetch route info:", error);
+            }
+
+            setRouteInfo(null);
+        };
+
+        loadRoute();
+    }, [ambulances, incidents, selectedAmbulance, selectedIncident]);
+
+    const handleSelectAmbulance = (ambulance) => {
+        setSelectedAmbulance(ambulance);
+
+        const assignedIncident = incidents.find(
+            (incident) => incident.assigned_ambulance_id === ambulance.id
+        );
+
+        if (assignedIncident) {
+            setSelectedIncident(assignedIncident);
+        } else {
+            setSelectedIncident(null);
+        }
+    };
 
     /*
      * Select incident
@@ -120,6 +174,15 @@ const selectIncident = async (incident) => {
     console.log("SELECTED INCIDENT:", incident);
 
     setSelectedIncident(incident);
+
+    if (incident?.assigned_ambulance_id) {
+        const assignedAmbulance = ambulances.find(
+            (ambulance) => ambulance.id === incident.assigned_ambulance_id
+        );
+        setSelectedAmbulance(assignedAmbulance || null);
+    } else {
+        setSelectedAmbulance(null);
+    }
 
     try {
 
@@ -252,6 +315,8 @@ const selectIncident = async (incident) => {
             );
 
             setSelectedIncident(null);
+            setSelectedAmbulance(null);
+            setRouteInfo(null);
             setRecommendations([]);
 
         } catch (error) {
@@ -264,6 +329,30 @@ const selectIncident = async (incident) => {
         }
     };
 
+
+    const routeCoordinates =
+        routeInfo?.coordinates?.length > 0
+            ? routeInfo.coordinates
+            : selectedAmbulance && selectedIncident &&
+                selectedIncident.assigned_ambulance_id === selectedAmbulance.id
+                ? [
+                    [selectedAmbulance.longitude, selectedAmbulance.latitude],
+                    [selectedIncident.longitude, selectedIncident.latitude],
+                ]
+                : selectedAmbulance
+                    ? (() => {
+                        const assignedIncident = incidents.find(
+                            (incident) => incident.assigned_ambulance_id === selectedAmbulance.id
+                        );
+
+                        if (!assignedIncident) return [];
+
+                        return [
+                            [selectedAmbulance.longitude, selectedAmbulance.latitude],
+                            [assignedIncident.longitude, assignedIncident.latitude],
+                        ];
+                    })()
+                    : [];
 
     return (
 
@@ -298,28 +387,24 @@ const selectIncident = async (incident) => {
                         onSelectIncident={
                             selectIncident
                         }
+                        routeCoordinates={routeCoordinates}
                     />
 
                 </section>
 
                 <AmbulancePanel
-                    ambulances={
-                        ambulances
-                    }
+                    ambulances={ambulances}
+                    selectedAmbulance={selectedAmbulance}
+                    onSelectAmbulance={handleSelectAmbulance}
                 />
 
             </main>
 
             <DispatchPanel
-                incident={
-                    selectedIncident
-                }
-                recommendations={
-                    recommendations
-                }
-                onDispatch={
-                    dispatchAmbulance
-                }
+                incident={selectedIncident}
+                recommendations={recommendations}
+                onDispatch={dispatchAmbulance}
+                routeInfo={routeInfo}
             />
 
         </div>

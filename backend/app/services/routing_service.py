@@ -19,6 +19,7 @@ async def get_route(
 
     params = {
         "overview": "false",
+        "geometries": "geojson",
     }
 
     async with httpx.AsyncClient(timeout=10.0) as client:
@@ -37,8 +38,10 @@ async def get_route(
         )
 
     route = data["routes"][0]
+    geometry = route.get("geometry", {})
 
     return {
         "distance_km": route["distance"] / 1000,
         "duration_minutes": route["duration"] / 60,
+        "coordinates": geometry.get("coordinates", []),
     }
