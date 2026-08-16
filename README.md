@@ -230,7 +230,7 @@ This project is under active development. For contributions:
 
 ## 📄 License
 
-[Add your license here]
+- Feel free to use this pice of software anyware and any time.
 
 ## 📞 Support & Documentation
 
