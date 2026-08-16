@@ -48,6 +48,12 @@ function IncidentPanel({
                         {incident.incident_type}
                     </div>
 
+                    <div className="incident-meta">
+                        <span className={`incident-status ${incident.status || "new"}`}>
+                            {String(incident.status || "new").toUpperCase()}
+                        </span>
+                    </div>
+
                     <div className="incident-description">
                         {incident.description}
                     </div>

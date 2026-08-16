@@ -151,6 +151,50 @@ body,
     font-size: 13px;
 }
 
+.incident-meta {
+    margin-top: 8px;
+}
+
+.incident-status {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: bold;
+    padding: 3px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.04em;
+}
+
+.incident-status.new {
+    background: #1d4ed8;
+    color: #dbeafe;
+}
+
+.incident-status.pending {
+    background: #a16207;
+    color: #fef3c7;
+}
+
+.incident-status.dispatched {
+    background: #7f1d1d;
+    color: #fecaca;
+}
+
+.incident-status.resolved {
+    background: #14532d;
+    color: #bbf7d0;
+}
+
+.incident-status.in_progress,
+.incident-status.in-progress {
+    background: #0f766e;
+    color: #ccfbf1;
+}
+
+.incident-status.cancelled {
+    background: #374151;
+    color: #e5e7eb;
+}
+
 .incident-description {
     margin-top: 5px;
     font-size: 11px;
