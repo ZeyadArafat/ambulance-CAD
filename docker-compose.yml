@@ -50,6 +50,7 @@ services:
       DATABASE_URL: postgresql+psycopg://cad:cad_password@postgres:5432/cad
       MQTT_HOST: mosquitto
       MQTT_PORT: 1883
+      OSRM_URL: http://osrm:5000
     ports:
       - "8000:8000"
     depends_on:

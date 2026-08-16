@@ -330,29 +330,7 @@ const selectIncident = async (incident) => {
     };
 
 
-    const routeCoordinates =
-        routeInfo?.coordinates?.length > 0
-            ? routeInfo.coordinates
-            : selectedAmbulance && selectedIncident &&
-                selectedIncident.assigned_ambulance_id === selectedAmbulance.id
-                ? [
-                    [selectedAmbulance.longitude, selectedAmbulance.latitude],
-                    [selectedIncident.longitude, selectedIncident.latitude],
-                ]
-                : selectedAmbulance
-                    ? (() => {
-                        const assignedIncident = incidents.find(
-                            (incident) => incident.assigned_ambulance_id === selectedAmbulance.id
-                        );
-
-                        if (!assignedIncident) return [];
-
-                        return [
-                            [selectedAmbulance.longitude, selectedAmbulance.latitude],
-                            [assignedIncident.longitude, assignedIncident.latitude],
-                        ];
-                    })()
-                    : [];
+    const routeCoordinates = routeInfo?.coordinates || [];
 
     return (
 
