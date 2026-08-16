@@ -36,3 +36,15 @@ def create_incident(payload: IncidentCreate, db: Session = Depends(get_db)):
 @router.get("/", response_model=list[IncidentResponse])
 def list_incidents(db: Session = Depends(get_db)):
     return db.query(Incident).order_by(Incident.id.desc()).all()
+
+
+@router.put("/{incident_id}", response_model=IncidentResponse)
+def update_incident(incident_id: int, payload: IncidentCreate, db: Session = Depends(get_db)):
+    incident = db.query(Incident).filter(Incident.id == incident_id).first()
+    if not incident:
+        return {"error": "Incident not found"}
+    for key, value in payload.model_dump().items():
+        setattr(incident, key, value)
+    db.commit()
+    db.refresh(incident)
+    return incident

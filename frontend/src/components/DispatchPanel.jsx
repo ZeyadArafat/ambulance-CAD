@@ -1,8 +1,73 @@
+import { useState } from "react";
+
 function DispatchPanel({
     incident,
     recommendations,
     onDispatch,
 }) {
+
+    const [dispatching, setDispatching] =useState(false);
+
+    const dispatchAmbulance = async (
+    incidentId,
+    ambulanceId
+) => {
+    
+
+    if (dispatching) {
+        return;
+    }
+
+    setDispatching(true);
+
+    try {
+
+        const response = await fetch(
+            "http://localhost:8000/api/dispatch/dispatch",
+            {
+                method: "POST",
+
+                headers: {
+                    "Content-Type": "application/json",
+                },
+
+                body: JSON.stringify({
+                    incident_id: incidentId,
+                    ambulance_id: ambulanceId,
+                }),
+            }
+        );
+
+        if (!response.ok) {
+
+            const error =
+                await response.json();
+
+            throw new Error(
+                error.detail ||
+                "Dispatch failed"
+            );
+        }
+
+        const data = await response.json();
+        onDispatch(data);
+        console.log("Dispatch successful:", data);
+
+
+    } catch (error) {
+
+        console.error(
+            "Dispatch error:",
+            error
+        );
+
+        alert(error.message);
+
+    } finally {
+
+        setDispatching(false);
+    }
+};
 
     if (!incident) {
 
@@ -104,12 +169,17 @@ function DispatchPanel({
                         </div>
 
                         <button
-                            className="dispatch-button"
+                            disabled={dispatching}
                             onClick={() =>
-                                onDispatch(best.ambulance_id)
+                                dispatchAmbulance(
+                                    incident.id,
+                                    best.ambulance_id
+                                )
                             }
                         >
-                            DISPATCH AMBULANCE
+                            {dispatching
+                                ? "DISPATCHING..."
+                                : "DISPATCH"}
                         </button>
                     </>
                 )}
@@ -121,3 +191,5 @@ function DispatchPanel({
 }
 
 export default DispatchPanel;
+
+

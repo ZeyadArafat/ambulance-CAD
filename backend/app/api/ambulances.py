@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -34,3 +34,16 @@ def create_ambulance(payload: AmbulanceCreate, db: Session = Depends(get_db)):
 @router.get("/", response_model=list[AmbulanceResponse])
 def list_ambulances(db: Session = Depends(get_db)):
     return db.query(Ambulance).order_by(Ambulance.id).all()
+
+
+# --------------------------------------------------------------------------------------------------
+@router.put("/{ambulance_id}", response_model=AmbulanceResponse)
+def update_ambulance(ambulance_id: int, payload: AmbulanceCreate, db: Session = Depends(get_db)):
+    ambulance = db.query(Ambulance).filter(Ambulance.id == ambulance_id).first()
+    if not ambulance:
+        raise HTTPException(status_code=404, detail="Ambulance not found")
+    for key, value in payload.model_dump().items():
+        setattr(ambulance, key, value)
+    db.commit()
+    db.refresh(ambulance)
+    return ambulance

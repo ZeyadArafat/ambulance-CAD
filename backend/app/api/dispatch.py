@@ -9,10 +9,7 @@ from ..services.dispatch_service import (
 )
 
 
-router = APIRouter(
-    prefix="/api/dispatch",
-    tags=["Dispatch"],
-)
+router = APIRouter(tags=["Dispatch"])
 
 
 @router.get(

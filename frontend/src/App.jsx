@@ -115,35 +115,66 @@ function App() {
     /*
      * Select incident
      */
+const selectIncident = async (incident) => {
 
-    const selectIncident = async (incident) => {
+    console.log("SELECTED INCIDENT:", incident);
 
-        setSelectedIncident(incident);
+    setSelectedIncident(incident);
 
-        try {
+    try {
 
-            const response = await fetch(
-                `${API_URL}/api/dispatch/recommend/${incident.id}`
-            );
+        const url =
+            `${API_URL}/api/dispatch/recommend/${incident.id}`;
 
-            const data =
-                await response.json();
+        console.log("REQUESTING:", url);
 
-            setRecommendations(
-                data.recommendations || []
-            );
+        const response = await fetch(url);
 
-        } catch (error) {
+        console.log(
+            "RESPONSE STATUS:",
+            response.status
+        );
+
+        console.log(
+            "RESPONSE OK:",
+            response.ok
+        );
+
+        if (!response.ok) {
+            const errorText = await response.text();
 
             console.error(
-                "Failed to get recommendations:",
-                error
+                "API ERROR:",
+                errorText
             );
 
-            setRecommendations([]);
-
+            throw new Error(
+                `Recommendation API returned ${response.status}`
+            );
         }
-    };
+
+        const data =
+            await response.json();
+
+        console.log(
+            "RECOMMENDATION DATA:",
+            data
+        );
+
+        setRecommendations(
+            data.recommendations || []
+        );
+
+    } catch (error) {
+
+        console.error(
+            "FAILED TO GET RECOMMENDATIONS:",
+            error
+        );
+
+        setRecommendations([]);
+    }
+};
 
 
     /*
@@ -161,7 +192,7 @@ function App() {
         try {
 
             const response = await fetch(
-                `${API_URL}/api/dispatch/assign`,
+                `${API_URL}/api/dispatch/dispatch`,
                 {
                     method: "POST",
 

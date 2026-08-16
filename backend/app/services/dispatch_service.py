@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 
 
-from ..models import Ambulance, Incident,Dispatch
+from ..models import Ambulance, Incident,Dispatch, utc_now
 from .routing_service import get_route
 
 
@@ -160,7 +160,7 @@ def dispatch_ambulance(
         incident_id=incident.id,
         ambulance_id=ambulance.id,
         status="dispatched",
-        dispatched_at=datetime.utcnow(),
+        dispatched_at=utc_now(),
     )
 
     db.add(dispatch)
@@ -168,6 +168,7 @@ def dispatch_ambulance(
     ambulance.status = "dispatched"
 
     incident.status = "dispatched"
+    incident.assigned_ambulance_id = ambulance.id
 
     db.commit()
 
