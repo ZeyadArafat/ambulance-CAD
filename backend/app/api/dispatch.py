@@ -1,15 +1,34 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from ..database import get_db
-from ..models import Incident
+from ..models import Dispatch, Incident
 from ..services.dispatch_service import (
     recommend_ambulances, dispatch_ambulance
 )
 
 
 router = APIRouter(tags=["Dispatch"])
+
+
+class DispatchResponse(BaseModel):
+    id: int
+    incident_id: int
+    ambulance_id: int
+    status: str
+    dispatched_at: datetime
+    arrived_at: datetime | None = None
+    completed_at: datetime | None = None
+
+    model_config = {"from_attributes": True}
+
+
+@router.get("/", response_model=list[DispatchResponse])
+def list_dispatches(db: Session = Depends(get_db)):
+    return db.query(Dispatch).order_by(Dispatch.id.desc()).all()
 
 
 @router.get(
