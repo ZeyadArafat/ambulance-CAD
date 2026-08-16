@@ -133,6 +133,7 @@ def publish_dispatch(
     latitude: float,
     longitude: float,
     priority: str,
+    route_coordinates: list[list[float]] | None = None,
 ):
 
     topic = (
@@ -145,6 +146,7 @@ def publish_dispatch(
         "latitude": latitude,
         "longitude": longitude,
         "priority": priority,
+        "route": route_coordinates or [],
     }
 
     client.publish(

@@ -3,6 +3,7 @@ from datetime import datetime
 
 
 from ..models import Ambulance, Incident,Dispatch, utc_now
+from .mqtt_service import publish_dispatch
 from .routing_service import get_route
 
 
@@ -113,7 +114,7 @@ async def recommend_ambulances(
     return recommendations
 
 
-def dispatch_ambulance(
+async def dispatch_ambulance(
     db: Session,
     incident_id: int,
     ambulance_id: int,
@@ -174,7 +175,24 @@ def dispatch_ambulance(
     incident.assigned_ambulance_id = ambulance.id
 
     db.commit()
-
     db.refresh(dispatch)
+
+    route = await get_route(
+        ambulance.latitude,
+        ambulance.longitude,
+        incident.latitude,
+        incident.longitude,
+    )
+
+    route_coordinates = route.get("coordinates", []) if route else []
+
+    publish_dispatch(
+        ambulance.code,
+        incident.id,
+        incident.latitude,
+        incident.longitude,
+        incident.priority,
+        route_coordinates,
+    )
 
     return dispatch

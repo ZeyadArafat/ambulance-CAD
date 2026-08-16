@@ -133,12 +133,12 @@ class DispatchRequest(BaseModel):
 
 
 @router.post("/dispatch")
-def dispatch_ambulance_endpoint(
+async def dispatch_ambulance_endpoint(
     request: DispatchRequest,
     db: Session = Depends(get_db),
 ):
     try:
-        dispatch = dispatch_ambulance(
+        dispatch = await dispatch_ambulance(
             db,
             request.incident_id,
             request.ambulance_id,
