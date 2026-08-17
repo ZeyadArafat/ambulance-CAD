@@ -9,18 +9,27 @@ class ConnectionManager:
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
+        client = getattr(websocket, "client", None)
+        client_info = f"{client[0]}:{client[1]}" if client else "unknown"
+        print(f"WebSocket added: {client_info} (total={len(self.active_connections)})")
 
     def disconnect(self, websocket: WebSocket):
         if websocket in self.active_connections:
+            client = getattr(websocket, "client", None)
+            client_info = f"{client[0]}:{client[1]}" if client else "unknown"
             self.active_connections.remove(websocket)
+            print(f"WebSocket removed: {client_info} (total={len(self.active_connections)})")
 
     async def broadcast(self, message: dict):
         disconnected = []
 
-        for connection in self.active_connections:
+        print(f"Broadcasting message to {len(self.active_connections)} connections: type={message.get('type')}")
+
+        for connection in list(self.active_connections):
             try:
                 await connection.send_json(message)
-            except Exception:
+            except Exception as e:
+                print(f"Failed to send to a connection: {e}")
                 disconnected.append(connection)
 
         for connection in disconnected:
