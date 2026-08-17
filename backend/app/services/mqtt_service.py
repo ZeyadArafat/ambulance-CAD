@@ -32,7 +32,15 @@ def on_connect(client, userdata, flags, reason_code, properties):
         qos=1,
     )
 
-    print("Subscribed to ambulance telemetry")
+    # Also listen for dispatch messages so the backend-integrated
+    # simulator can react to dispatches published by the dispatch
+    # service.
+    client.subscribe(
+        "cad/ambulance/+/dispatch",
+        qos=1,
+    )
+
+    print("Subscribed to ambulance telemetry and dispatch topics")
 
 
 def on_message(client, userdata, message):
@@ -48,6 +56,17 @@ def on_message(client, userdata, message):
         payload = json.loads(
             message.payload.decode()
         )
+
+        # If this is a dispatch message, inform the simulation
+        # manager if one is registered, and return early.
+        if message_type == "dispatch":
+            global dispatch_callback
+            if dispatch_callback:
+                try:
+                    dispatch_callback(ambulance_code, payload)
+                except Exception as e:
+                    print(f"Dispatch callback error: {e}")
+            return
 
         db = SessionLocal()
 
@@ -154,3 +173,31 @@ def publish_dispatch(
         json.dumps(payload),
         qos=1,
     )
+
+
+# Simulation dispatch callback registration
+# Simulation manager can register a callback to receive
+# dispatch payloads that are published to MQTT.
+dispatch_callback = None
+
+def register_dispatch_callback(cb):
+    global dispatch_callback
+    dispatch_callback = cb
+
+
+def publish_telemetry(ambulance_code: str, latitude: float, longitude: float, status: str):
+    """Publish location and status telemetry for the given ambulance."""
+    location_topic = f"cad/ambulance/{ambulance_code}/location"
+    status_topic = f"cad/ambulance/{ambulance_code}/status"
+
+    location_payload = {
+        "ambulance": ambulance_code,
+        "latitude": round(latitude, 6),
+        "longitude": round(longitude, 6),
+        "status": status,
+    }
+
+    status_payload = {"ambulance": ambulance_code, "status": status}
+
+    client.publish(location_topic, json.dumps(location_payload), qos=1)
+    client.publish(status_topic, json.dumps(status_payload), qos=1)
