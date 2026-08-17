@@ -18,6 +18,11 @@ client = mqtt.Client(
     client_id="cad-backend",
 )
 
+# The FastAPI main event loop; set at connect_mqtt() time so the
+# MQTT client (which runs on its own thread) can schedule
+# coroutines safely on the main loop.
+main_loop = None
+
 
 def on_connect(client, userdata, flags, reason_code, properties):
     print("CAD connected to MQTT broker")
@@ -108,20 +113,39 @@ def on_message(client, userdata, message):
 
             db.commit()
 
-            asyncio.run(
-                manager.broadcast(
-                    {
-                        "type": "ambulance_update",
-                        "ambulance": {
-                            "id": ambulance.id,
-                            "code": ambulance.code,
-                            "latitude": ambulance.latitude,
-                            "longitude": ambulance.longitude,
-                            "status": ambulance.status,
-                        },
-                    }
+            # Schedule the broadcast on the FastAPI main event loop if
+            # available. MQTT callbacks run in a separate thread so using
+            # asyncio.run() causes broadcasts to run on a different loop
+            # which can fail when interacting with WebSocket objects that
+            # are bound to the main loop. Use run_coroutine_threadsafe for
+            # safe cross-thread scheduling.
+            broadcast_coro = manager.broadcast(
+                {
+                    "type": "ambulance_update",
+                    "ambulance": {
+                        "id": ambulance.id,
+                        "code": ambulance.code,
+                        "latitude": ambulance.latitude,
+                        "longitude": ambulance.longitude,
+                        "status": ambulance.status,
+                    },
+                }
             )
-)
+
+            if main_loop is not None:
+                try:
+                    asyncio.run_coroutine_threadsafe(
+                        broadcast_coro,
+                        main_loop,
+                    )
+                except Exception as e:
+                    print(f"Failed to schedule broadcast on main loop: {e}")
+            else:
+                # Fallback: try running directly (single-threaded / tests)
+                try:
+                    asyncio.run(broadcast_coro)
+                except Exception as e:
+                    print(f"Broadcast failed: {e}")
 
         finally:
             db.close()
@@ -136,6 +160,16 @@ def connect_mqtt():
 
     client.on_connect = on_connect
     client.on_message = on_message
+
+    # Capture the main FastAPI event loop so MQTT callbacks (which run on
+    # the paho client's thread) can safely schedule coroutines back to
+    # the main loop via run_coroutine_threadsafe.
+    global main_loop
+    try:
+        main_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # If no running loop in this thread, fall back to get_event_loop().
+        main_loop = asyncio.get_event_loop()
 
     client.connect(
         MQTT_HOST,
