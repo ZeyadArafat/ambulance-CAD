@@ -43,13 +43,25 @@ def health():
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
 
+    client = getattr(websocket, "client", None)
+    client_info = f"{client[0]}:{client[1]}" if client else "unknown"
+
+    print(f"WebSocket connection attempt from {client_info}")
+
     await manager.connect(websocket)
+
+    print(f"WebSocket connected: {client_info}")
 
     try:
         while True:
             await websocket.receive_text()
 
     except WebSocketDisconnect:
+        print(f"WebSocket disconnected: {client_info}")
+        manager.disconnect(websocket)
+
+    except Exception as e:
+        print(f"WebSocket error ({client_info}): {e}")
         manager.disconnect(websocket)
 
 
