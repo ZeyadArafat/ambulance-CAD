@@ -69,7 +69,7 @@ function App() {
         };
 
         ws.onmessage = (event) => {
-            console.debug("CAD WS raw:", event.data);
+            console.log("CAD WS raw:", event.data);
 
             let data;
             try {
@@ -81,14 +81,17 @@ function App() {
 
             if (data.type === "ambulance_update") {
                 const ambulance = data.ambulance;
+                console.log(`Received ambulance_update for id=${ambulance.id}`, ambulance);
 
                 setAmbulances((current) => {
                     const exists = current.some((item) => item.id === ambulance.id);
 
                     if (!exists) {
+                        console.log(`Adding ambulance id=${ambulance.id}`);
                         return [...current, ambulance];
                     }
 
+                    console.log(`Updating ambulance id=${ambulance.id}`);
                     return current.map((item) => (item.id === ambulance.id ? ambulance : item));
                 });
             }
@@ -113,6 +116,10 @@ function App() {
         };
 
     }, []);
+
+    useEffect(() => {
+        console.log("Ambulances state changed:", ambulances);
+    }, [ambulances]);
 
     useEffect(() => {
         const loadRoute = async () => {
