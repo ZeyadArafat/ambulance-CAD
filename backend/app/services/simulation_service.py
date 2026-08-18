@@ -191,6 +191,25 @@ class SimulationManager:
                             except Exception as e:
                                 print(f"Failed to publish telemetry for {code}: {e}")
 
+                            # ALSO update the database directly to ensure the
+                            # ambulance rows reflect the simulation state even if
+                            # the MQTT broker does not loop back the publish to
+                            # the same client or there's a delivery issue.
+                            try:
+                                db = SessionLocal()
+                                try:
+                                    amb = db.query(Ambulance).filter(Ambulance.code == state['code']).first()
+                                    if amb:
+                                        amb.latitude = float(state['latitude'])
+                                        amb.longitude = float(state['longitude'])
+                                        amb.status = state.get('status', amb.status)
+                                        db.commit()
+                                        print(f"Simulation DB-updated ambulance {state['code']}: {amb.latitude}, {amb.longitude}")
+                                finally:
+                                    db.close()
+                            except Exception as e:
+                                print(f"Failed to DB-update telemetry for {code}: {e}")
+
                         except Exception as e:
                             print(f"Simulation error for {code}: {e}")
 
