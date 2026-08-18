@@ -48,8 +48,16 @@ function MapView({
     routeCoordinates = [],
 }) {
 
+    console.log('MapView ambulances prop:', ambulances);
+
     const cairo = [30.0444, 31.2357];
     const mappedRouteCoordinates = routeCoordinates.map(([lng, lat]) => [lat, lng]);
+
+    if (ambulances && ambulances.length) {
+        ambulances.forEach((a) => {
+            console.log(`MapView marker for id=${a.id} -> [${a.latitude}, ${a.longitude}]`);
+        });
+    }
 
     return (
         <MapContainer
