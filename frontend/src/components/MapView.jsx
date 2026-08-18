@@ -7,6 +7,8 @@ import {
 } from "react-leaflet";
 
 import { divIcon } from "leaflet";
+import { useRef, useEffect } from "react";
+
 
 
 // ===============================
@@ -40,6 +42,32 @@ const incidentIcon = divIcon({
     iconAnchor: [17, 17],
 });
 
+
+function MovingMarker({ position, icon, children, markerKey }) {
+    const markerRef = useRef(null);
+
+    useEffect(() => {
+        if (markerRef.current && position && position[0] !== undefined && position[1] !== undefined) {
+            try {
+                markerRef.current.setLatLng(position);
+            } catch (e) {
+                // ignore
+                console.error('setLatLng error', e);
+            }
+        }
+    }, [position]);
+
+    return (
+        <Marker
+            key={markerKey}
+            ref={markerRef}
+            position={position}
+            icon={icon}
+        >
+            {children}
+        </Marker>
+    );
+}
 
 function MapView({
     ambulances,
@@ -81,8 +109,9 @@ function MapView({
 
             {ambulances.map((ambulance) => (
 
-                <Marker
+                <MovingMarker
                     key={`ambulance-${ambulance.id}`}
+                    markerKey={`ambulance-${ambulance.id}`}
                     position={[
                         Number(ambulance.latitude),
                         Number(ambulance.longitude),
@@ -110,7 +139,7 @@ function MapView({
 
                     </Popup>
 
-                </Marker>
+                </MovingMarker>
 
             ))}
 
