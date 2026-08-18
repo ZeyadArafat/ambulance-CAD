@@ -126,11 +126,15 @@ class SimulationManager:
         if distance <= self.TARGET_REACHED_DISTANCE:
             state["latitude"] = target_lat
             state["longitude"] = target_lon
+            print(f"Simulation arrived for {state.get('code')}: {state['latitude']}, {state['longitude']}")
             return True
 
         step_ratio = min(self.MOVE_STEP / distance, 1.0)
-        state["latitude"] = lat + lat_delta * step_ratio
-        state["longitude"] = lon + lon_delta * step_ratio
+        new_lat = lat + lat_delta * step_ratio
+        new_lon = lon + lon_delta * step_ratio
+        print(f"Simulation move for {state.get('code')}: {lat},{lon} -> {new_lat},{new_lon} (step_ratio={step_ratio})")
+        state["latitude"] = new_lat
+        state["longitude"] = new_lon
         return False
 
     def _run_loop(self):
@@ -180,6 +184,7 @@ class SimulationManager:
                             # of the backend (mqtt_service) will process it and
                             # update the DB and websockets as normal.
                             try:
+                                print(f"Simulation publishing telemetry for {code}: {state['latitude']}, {state['longitude']} | {state['status']}")
                                 mqtt_service.publish_telemetry(
                                     state["code"], state["latitude"], state["longitude"], state["status"]
                                 )

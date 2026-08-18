@@ -50,6 +50,7 @@ def on_connect(client, userdata, flags, reason_code, properties):
 
 def on_message(client, userdata, message):
     try:
+        print(f"MQTT on_message: topic={message.topic} payload={message.payload[:200]}")
         topic_parts = message.topic.split("/")
 
         # Expected:
@@ -61,6 +62,8 @@ def on_message(client, userdata, message):
         payload = json.loads(
             message.payload.decode()
         )
+
+        print(f"MQTT parsed payload for {ambulance_code} [{message_type}]: {payload}")
 
         # If this is a dispatch message, inform the simulation
         # manager if one is registered, and return early.
@@ -112,6 +115,7 @@ def on_message(client, userdata, message):
                 )
 
             db.commit()
+            print(f"DB commit successful for {ambulance_code}")
 
             # Schedule the broadcast on the FastAPI main event loop if
             # available. MQTT callbacks run in a separate thread so using
@@ -233,5 +237,7 @@ def publish_telemetry(ambulance_code: str, latitude: float, longitude: float, st
 
     status_payload = {"ambulance": ambulance_code, "status": status}
 
+    print(f"MQTT publish -> {location_topic}: {location_payload}")
     client.publish(location_topic, json.dumps(location_payload), qos=1)
+    print(f"MQTT publish -> {status_topic}: {status_payload}")
     client.publish(status_topic, json.dumps(status_payload), qos=1)
