@@ -66,6 +66,12 @@ function App() {
 
         ws.onopen = (ev) => {
             console.log("Connected to CAD WebSocket", ev);
+            // Expose the WebSocket for interactive debugging in the browser console
+            try {
+                window.__CAD_WS = ws;
+            } catch (e) {
+                /* ignore in non-browser envs */
+            }
         };
 
         ws.onmessage = (event) => {
