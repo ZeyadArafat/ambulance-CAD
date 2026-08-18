@@ -54,64 +54,62 @@ function App() {
      * WebSocket
      */
 
+    const wsRef = useRef(null);
+
     useEffect(() => {
 
-        const ws = new WebSocket(
-            "ws://localhost:8000/ws"
-        );
+        // Avoid creating multiple sockets if StrictMode causes double mount
+        if (wsRef.current) return;
 
-        ws.onopen = () => {
-            console.log(
-                "Connected to CAD WebSocket"
-            );
+        const ws = new WebSocket("ws://localhost:8000/ws");
+        wsRef.current = ws;
+
+        ws.onopen = (ev) => {
+            console.log("Connected to CAD WebSocket", ev);
         };
 
         ws.onmessage = (event) => {
+            console.debug("CAD WS raw:", event.data);
 
-            const data = JSON.parse(
-                event.data
-            );
-
-            if (
-                data.type ===
-                "ambulance_update"
-            ) {
-
-                const ambulance =
-                    data.ambulance;
-
-                setAmbulances((current) => {
-
-                    const exists =
-                        current.some(
-                            (item) =>
-                                item.id ===
-                                ambulance.id
-                        );
-
-                    if (!exists) {
-                        return [
-                            ...current,
-                            ambulance,
-                        ];
-                    }
-
-                    return current.map(
-                        (item) =>
-                            item.id ===
-                            ambulance.id
-                                ? ambulance
-                                : item
-                    );
-
-                });
-
+            let data;
+            try {
+                data = JSON.parse(event.data);
+            } catch (err) {
+                console.error("Failed to parse WS message:", err, event.data);
+                return;
             }
 
+            if (data.type === "ambulance_update") {
+                const ambulance = data.ambulance;
+
+                setAmbulances((current) => {
+                    const exists = current.some((item) => item.id === ambulance.id);
+
+                    if (!exists) {
+                        return [...current, ambulance];
+                    }
+
+                    return current.map((item) => (item.id === ambulance.id ? ambulance : item));
+                });
+            }
+        };
+
+        ws.onclose = (ev) => {
+            console.warn("CAD WebSocket closed:", ev);
+            wsRef.current = null;
+        };
+
+        ws.onerror = (ev) => {
+            console.error("CAD WebSocket error:", ev);
         };
 
         return () => {
-            ws.close();
+            try {
+                ws.close();
+            } catch (e) {
+                /* ignore */
+            }
+            wsRef.current = null;
         };
 
     }, []);
