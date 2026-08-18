@@ -332,6 +332,97 @@ body,
     background: #b91c1c;
 }
 
+.dispatcher-actions {
+    margin-top: 10px;
+    margin-bottom: 15px;
+}
+
+.dispatcher-action-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.add-ambulance-button,
+.delete-ambulance-button {
+    padding: 9px 14px;
+    border-radius: 6px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.add-ambulance-button {
+    border: 1px solid #f59e0b;
+    background: #f59e0b;
+    color: #111827;
+}
+
+.delete-ambulance-button {
+    border: 1px solid #ef4444;
+    background: #7f1d1d;
+    color: #fee2e2;
+}
+
+.add-ambulance-form,
+.delete-ambulance-form {
+    margin: 0 0 20px;
+    padding: 15px;
+    border: 1px solid #374151;
+    border-radius: 8px;
+    background: #111827;
+}
+
+.form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+}
+
+.form-grid.single-field {
+    grid-template-columns: 1fr;
+}
+
+.add-ambulance-form label,
+.delete-ambulance-form label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    color: #d1d5db;
+    font-size: 11px;
+    text-transform: uppercase;
+}
+
+.add-ambulance-form input,
+.add-ambulance-form select,
+.delete-ambulance-form input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #374151;
+    border-radius: 6px;
+    background: #0f172a;
+    color: white;
+}
+
+.form-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 12px;
+}
+
+.form-actions button {
+    padding: 9px 14px;
+    border: none;
+    border-radius: 6px;
+    background: #2563eb;
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.danger-button {
+    background: #dc2626 !important;
+}
+
 .empty-state {
     color: #6b7280;
     font-size: 12px;

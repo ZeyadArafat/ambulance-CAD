@@ -244,6 +244,66 @@ const selectIncident = async (incident) => {
      * Dispatch ambulance
      */
 
+    const addAmbulance = async (ambulanceData) => {
+        const response = await fetch(
+            `${API_URL}/api/ambulances/`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify(ambulanceData),
+            }
+        );
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || "Unable to add ambulance");
+        }
+
+        const createdAmbulance = await response.json();
+
+        const ambulancesResponse = await fetch(`${API_URL}/api/ambulances/`);
+        const updatedAmbulances = await ambulancesResponse.json();
+        setAmbulances(updatedAmbulances);
+
+        return createdAmbulance;
+    };
+
+    const deleteAmbulance = async (code) => {
+        const response = await fetch(
+            `${API_URL}/api/ambulances/code/${encodeURIComponent(code)}`,
+            {
+                method: "DELETE",
+            }
+        );
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.detail || "Unable to delete ambulance");
+        }
+
+        const ambulancesResponse = await fetch(`${API_URL}/api/ambulances/`);
+        const updatedAmbulances = await ambulancesResponse.json();
+        setAmbulances(updatedAmbulances);
+
+        if (selectedAmbulance?.code === code) {
+            setSelectedAmbulance(null);
+        }
+
+        const updatedIncidents = incidents.map((incident) =>
+            incident.assigned_ambulance_id && ambulances.some((ambulance) => ambulance.id === incident.assigned_ambulance_id && ambulance.code === code)
+                ? { ...incident, assigned_ambulance_id: null }
+                : incident
+        );
+
+        if (updatedIncidents.some((incident, index) => incident !== incidents[index])) {
+            setIncidents(updatedIncidents);
+        }
+
+        return true;
+    };
+
     const dispatchAmbulance = async (
         ambulanceId,
         manual = false
@@ -394,6 +454,8 @@ const selectIncident = async (incident) => {
                 incident={selectedIncident}
                 recommendations={recommendations}
                 onDispatch={dispatchAmbulance}
+                onAddAmbulance={addAmbulance}
+                onDeleteAmbulance={deleteAmbulance}
                 routeInfo={routeInfo}
                 ambulances={ambulances}
             />

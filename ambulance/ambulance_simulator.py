@@ -4,6 +4,7 @@ import os
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from urllib import request, parse
 
 import paho.mqtt.client as mqtt
 import sys
@@ -13,7 +14,7 @@ from sqlalchemy.orm import Session
 # Database imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from backend.app.database import SessionLocal, engine
-from backend.app.models import Ambulance, Base
+from backend.app.models import Ambulance, Base, Incident
 
 # Ensure tables exist
 Base.metadata.create_all(bind=engine)
@@ -34,6 +35,23 @@ MOVE_STEP = 0.00025
 # Global state for each ambulance
 ambulance_states = {}
 ambulance_lock = threading.Lock()
+
+
+def persist_ambulance_state(ambulance_code, state):
+    db = SessionLocal()
+    try:
+        ambulance = db.query(Ambulance).filter(Ambulance.code == ambulance_code).first()
+        if not ambulance:
+            return
+
+        ambulance.latitude = float(state["latitude"])
+        ambulance.longitude = float(state["longitude"])
+        ambulance.status = state["status"]
+        db.commit()
+    except Exception as exc:
+        print(f"[{ambulance_code}] failed to persist ambulance state to database: {exc}")
+    finally:
+        db.close()
 
 
 def publish_telemetry(client, ambulance_code):
@@ -113,9 +131,9 @@ def on_message(client, userdata, message):
     with ambulance_lock:
         if ambulance_code not in ambulance_states:
             return
-        
+
         state = ambulance_states[ambulance_code]
-        
+
         route_points = payload.get("route") or []
         if route_points:
             state["route_points"] = [
@@ -144,8 +162,99 @@ def on_message(client, userdata, message):
         if not route_points and (state["target_latitude"] is None or state["target_longitude"] is None):
             print(f"[{ambulance_code}] Dispatch payload missing target coordinates")
 
+        persist_ambulance_state(ambulance_code, state)
 
-def simulate_ambulance(ambulance_code, initial_lat, initial_lon):
+
+def fetch_route_points(start_lat, start_lon, end_lat, end_lon):
+    """Fetch the routed path from OSRM and return it as [(lat, lon), ...]."""
+    candidate_urls = [
+        os.getenv("OSRM_URL"),
+        "http://osrm:5000",
+        "http://localhost:5000",
+    ]
+    candidate_urls = [url for url in dict.fromkeys(candidate_urls) if url]
+
+    coords = f"{start_lon},{start_lat};{end_lon},{end_lat}"
+    query = parse.urlencode({"overview": "full", "geometries": "geojson"})
+
+    for base_url in candidate_urls:
+        url = f"{base_url}/route/v1/driving/{coords}?{query}"
+        try:
+            with request.urlopen(url, timeout=10) as response:
+                data = json.loads(response.read().decode())
+
+            if data.get("code") != "Ok":
+                continue
+
+            route = data.get("routes", [{}])[0]
+            coords_list = route.get("geometry", {}).get("coordinates", [])
+            if not coords_list:
+                continue
+
+            return [(float(point[1]), float(point[0])) for point in coords_list]
+        except Exception:
+            continue
+
+    return []
+
+
+def hydrate_state_from_assigned_incident(ambulance_code, state):
+    """Resume movement for ambulances that were already dispatched before the simulator started."""
+    if state["target_latitude"] is not None or state["target_longitude"] is not None:
+        return
+
+    if state["route_points"]:
+        return
+
+    db = SessionLocal()
+    try:
+        ambulance = db.query(Ambulance).filter(Ambulance.code == ambulance_code).first()
+        if not ambulance:
+            return
+
+        incident = (
+            db.query(Incident)
+            .filter(Incident.assigned_ambulance_id == ambulance.id)
+            .order_by(Incident.id.desc())
+            .first()
+        )
+
+        if not incident:
+            return
+
+        route_points = fetch_route_points(
+            state["latitude"],
+            state["longitude"],
+            float(incident.latitude),
+            float(incident.longitude),
+        )
+
+        if route_points:
+            state["route_points"] = route_points
+            target_lat, target_lon = state["route_points"][0]
+            state["target_latitude"] = target_lat
+            state["target_longitude"] = target_lon
+            state["status"] = "en_route"
+            print(
+                f"[{ambulance_code}] resumed route from assigned incident "
+                f"{state['target_latitude']}, {state['target_longitude']}"
+            )
+            return
+
+        state["target_latitude"] = float(incident.latitude)
+        state["target_longitude"] = float(incident.longitude)
+        state["status"] = "en_route"
+        print(
+            f"[{ambulance_code}] resumed from assigned incident "
+            f"{state['target_latitude']}, {state['target_longitude']}"
+        )
+    except Exception as exc:
+        print(f"[{ambulance_code}] failed to hydrate assigned incident state: {exc}")
+    finally:
+        db.close()
+
+
+def simulate_ambulance(ambulance_code, initial_lat, initial_lon, initial_status):
     """Simulate a single ambulance"""
     
     # Initialize state
@@ -153,11 +262,13 @@ def simulate_ambulance(ambulance_code, initial_lat, initial_lon):
         ambulance_states[ambulance_code] = {
             "latitude": initial_lat,
             "longitude": initial_lon,
-            "status": "available",
+            "status": initial_status,
             "target_latitude": None,
             "target_longitude": None,
             "route_points": [],
         }
+        hydrate_state_from_assigned_incident(ambulance_code, ambulance_states[ambulance_code])
+        persist_ambulance_state(ambulance_code, ambulance_states[ambulance_code])
     
     # Create MQTT client for this ambulance
     client = mqtt.Client(
@@ -195,6 +306,7 @@ def simulate_ambulance(ambulance_code, initial_lat, initial_lon):
                     break
                 
                 state = ambulance_states[ambulance_code]
+                hydrate_state_from_assigned_incident(ambulance_code, state)
                 
                 # Handle route points
                 if state["route_points"]:
@@ -202,7 +314,7 @@ def simulate_ambulance(ambulance_code, initial_lat, initial_lon):
                     lat_delta = next_lat - state["latitude"]
                     lon_delta = next_lon - state["longitude"]
                     distance = math.hypot(lat_delta, lon_delta)
-                    
+
                     if distance <= TARGET_REACHED_DISTANCE:
                         state["latitude"] = next_lat
                         state["longitude"] = next_lon
@@ -222,13 +334,15 @@ def simulate_ambulance(ambulance_code, initial_lat, initial_lon):
                         state["latitude"] += lat_delta * step_ratio
                         state["longitude"] += lon_delta * step_ratio
                         state["status"] = "en_route"
-                
+
+                    persist_ambulance_state(ambulance_code, state)
+
                 # Handle single target
                 elif state["target_latitude"] is not None and state["target_longitude"] is not None:
                     lat_delta = state["target_latitude"] - state["latitude"]
                     lon_delta = state["target_longitude"] - state["longitude"]
                     distance = math.hypot(lat_delta, lon_delta)
-                    
+
                     if distance <= TARGET_REACHED_DISTANCE:
                         state["latitude"] = state["target_latitude"]
                         state["longitude"] = state["target_longitude"]
@@ -244,10 +358,13 @@ def simulate_ambulance(ambulance_code, initial_lat, initial_lon):
                         state["latitude"] += lat_delta * step_ratio
                         state["longitude"] += lon_delta * step_ratio
                         state["status"] = "en_route"
+
+                    persist_ambulance_state(ambulance_code, state)
                 else:
-                    if state["status"] not in {"en_route", "busy"}:
+                    if state["status"] not in {"en_route", "busy", "dispatched"}:
                         state["status"] = "available"
-            
+                    persist_ambulance_state(ambulance_code, state)
+
             publish_telemetry(client, ambulance_code)
             time.sleep(5)
     
@@ -263,42 +380,44 @@ def simulate_ambulance(ambulance_code, initial_lat, initial_lon):
 
 
 def main():
-    """Fetch all ambulances and simulate them concurrently"""
-    
-    # Get all ambulances from database
+    """Keep simulating ambulances, including ones added while the process is running."""
     db: Session = SessionLocal()
     try:
-        ambulances = db.query(Ambulance).all()
-        
-        if not ambulances:
-            print("No ambulances found in database")
-            return
-        
-        print(f"Found {len(ambulances)} ambulances to simulate")
-        
-        # Use ThreadPoolExecutor to run simulators concurrently
-        with ThreadPoolExecutor(max_workers=len(ambulances)) as executor:
-            futures = []
-            for ambulance in ambulances:
-                # Use database coordinates or defaults
-                lat = ambulance.latitude if ambulance.latitude else 30.0444
-                lon = ambulance.longitude if ambulance.longitude else 31.2357
-                
-                future = executor.submit(
-                    simulate_ambulance,
-                    ambulance.code,
-                    lat,
-                    lon
-                )
-                futures.append(future)
-            
-            # Wait for all simulators
-            for future in futures:
-                try:
-                    future.result()
-                except Exception as e:
-                    print(f"Ambulance simulator error: {e}")
-    
+        futures = {}
+
+        with ThreadPoolExecutor(max_workers=32) as executor:
+            while True:
+                ambulances = db.query(Ambulance).all()
+
+                for ambulance in ambulances:
+                    if ambulance.code in futures:
+                        continue
+
+                    lat = ambulance.latitude if ambulance.latitude else 30.0444
+                    lon = ambulance.longitude if ambulance.longitude else 31.2357
+                    status = ambulance.status if ambulance.status else "available"
+
+                    future = executor.submit(
+                        simulate_ambulance,
+                        ambulance.code,
+                        lat,
+                        lon,
+                        status,
+                    )
+                    futures[ambulance.code] = future
+                    print(f"Started simulator for {ambulance.code}")
+
+                for code, future in list(futures.items()):
+                    if future.done():
+                        try:
+                            future.result()
+                        except Exception as exc:
+                            print(f"Ambulance simulator error for {code}: {exc}")
+                        finally:
+                            del futures[code]
+
+                time.sleep(5)
+
     finally:
         db.close()
 

@@ -4,12 +4,26 @@ function DispatchPanel({
     incident,
     recommendations,
     onDispatch,
+    onAddAmbulance,
+    onDeleteAmbulance,
     routeInfo,
     ambulances = [],
 }) {
 
     const [dispatching, setDispatching] = useState(false);
     const [manualAmbulanceId, setManualAmbulanceId] = useState("");
+    const [isAddAmbulanceOpen, setIsAddAmbulanceOpen] = useState(false);
+    const [isDeleteAmbulanceOpen, setIsDeleteAmbulanceOpen] = useState(false);
+    const [newAmbulance, setNewAmbulance] = useState({
+        code: "",
+        status: "available",
+        ambulance_type: "basic_life_support",
+        latitude: "",
+        longitude: "",
+    });
+    const [ambulanceCodeToDelete, setAmbulanceCodeToDelete] = useState("");
+    const [isSubmittingAmbulance, setIsSubmittingAmbulance] = useState(false);
+    const [isDeletingAmbulance, setIsDeletingAmbulance] = useState(false);
 
     useEffect(() => {
         if (!incident) {
@@ -45,22 +59,72 @@ function DispatchPanel({
         }
     };
 
-    if (!incident && !routeInfo) {
+    const handleNewAmbulanceChange = (event) => {
+        const { name, value } = event.target;
 
-        return (
-            <div className="dispatch-panel">
+        setNewAmbulance((current) => ({
+            ...current,
+            [name]: value,
+        }));
+    };
 
-                <div className="panel-title">
-                    DISPATCH
-                </div>
+    const handleAddAmbulance = async (event) => {
+        event.preventDefault();
 
-                <div className="empty-state">
-                    Select an incident or ambulance to view its route
-                </div>
+        if (!newAmbulance.code.trim()) {
+            alert("Ambulance code is required");
+            return;
+        }
 
-            </div>
-        );
-    }
+        setIsSubmittingAmbulance(true);
+
+        try {
+            const payload = {
+                code: newAmbulance.code.trim(),
+                status: newAmbulance.status,
+                ambulance_type: newAmbulance.ambulance_type,
+                latitude: newAmbulance.latitude === "" ? null : Number(newAmbulance.latitude),
+                longitude: newAmbulance.longitude === "" ? null : Number(newAmbulance.longitude),
+            };
+
+            await onAddAmbulance(payload);
+            setNewAmbulance({
+                code: "",
+                status: "available",
+                ambulance_type: "basic_life_support",
+                latitude: "",
+                longitude: "",
+            });
+            setIsAddAmbulanceOpen(false);
+        } catch (error) {
+            console.error("Add ambulance failed:", error);
+            alert(error.message || "Unable to add ambulance");
+        } finally {
+            setIsSubmittingAmbulance(false);
+        }
+    };
+
+    const handleDeleteAmbulance = async (event) => {
+        event.preventDefault();
+
+        if (!ambulanceCodeToDelete.trim()) {
+            alert("Ambulance code is required");
+            return;
+        }
+
+        setIsDeletingAmbulance(true);
+
+        try {
+            await onDeleteAmbulance(ambulanceCodeToDelete.trim());
+            setAmbulanceCodeToDelete("");
+            setIsDeleteAmbulanceOpen(false);
+        } catch (error) {
+            console.error("Delete ambulance failed:", error);
+            alert(error.message || "Unable to delete ambulance");
+        } finally {
+            setIsDeletingAmbulance(false);
+        }
+    };
 
     const best =
         recommendations.length > 0
@@ -98,6 +162,129 @@ function DispatchPanel({
                         </div>
                     </div>
                 </div>
+            )}
+
+            <div className="dispatcher-actions">
+                <div className="dispatcher-action-row">
+                    <button
+                        type="button"
+                        className="add-ambulance-button"
+                        onClick={() => {
+                            setIsDeleteAmbulanceOpen(false);
+                            setIsAddAmbulanceOpen((current) => !current);
+                        }}
+                    >
+                        {isAddAmbulanceOpen ? "CLOSE ADD FORM" : "ADD NEW AMBULANCE"}
+                    </button>
+
+                    <button
+                        type="button"
+                        className="delete-ambulance-button"
+                        onClick={() => {
+                            setIsAddAmbulanceOpen(false);
+                            setIsDeleteAmbulanceOpen((current) => !current);
+                        }}
+                    >
+                        {isDeleteAmbulanceOpen ? "CLOSE DELETE FORM" : "DELETE AMBULANCE"}
+                    </button>
+                </div>
+            </div>
+
+            {isAddAmbulanceOpen && (
+                <form className="add-ambulance-form" onSubmit={handleAddAmbulance}>
+                    <div className="form-grid">
+                        <label>
+                            <span>Code</span>
+                            <input
+                                type="text"
+                                name="code"
+                                value={newAmbulance.code}
+                                onChange={handleNewAmbulanceChange}
+                                placeholder="AMB-XXX"
+                            />
+                        </label>
+
+                        <label>
+                            <span>Status</span>
+                            <select
+                                name="status"
+                                value={newAmbulance.status}
+                                onChange={handleNewAmbulanceChange}
+                            >
+                                <option value="available">Available</option>
+                                <option value="busy">Busy</option>
+                                <option value="en_route">En Route</option>
+                                <option value="dispatched">Dispatched</option>
+                                <option value="offline">Offline</option>
+                            </select>
+                        </label>
+
+                        <label>
+                            <span>Type</span>
+                            <select
+                                name="ambulance_type"
+                                value={newAmbulance.ambulance_type}
+                                onChange={handleNewAmbulanceChange}
+                            >
+                                <option value="basic_life_support">Basic Life Support</option>
+                                <option value="advanced_life_support">Advanced Life Support</option>
+                                <option value="mobile_icu">Mobile ICU</option>
+                            </select>
+                        </label>
+
+                        <label>
+                            <span>Latitude</span>
+                            <input
+                                type="number"
+                                step="0.000001"
+                                name="latitude"
+                                value={newAmbulance.latitude}
+                                onChange={handleNewAmbulanceChange}
+                                placeholder="30.0444"
+                            />
+                        </label>
+
+                        <label>
+                            <span>Longitude</span>
+                            <input
+                                type="number"
+                                step="0.000001"
+                                name="longitude"
+                                value={newAmbulance.longitude}
+                                onChange={handleNewAmbulanceChange}
+                                placeholder="31.2357"
+                            />
+                        </label>
+                    </div>
+
+                    <div className="form-actions">
+                        <button type="submit" disabled={isSubmittingAmbulance}>
+                            {isSubmittingAmbulance ? "ADDING..." : "SAVE AMBULANCE"}
+                        </button>
+                    </div>
+                </form>
+            )}
+
+            {isDeleteAmbulanceOpen && (
+                <form className="delete-ambulance-form" onSubmit={handleDeleteAmbulance}>
+                    <div className="form-grid single-field">
+                        <label>
+                            <span>Ambulance code</span>
+                            <input
+                                type="text"
+                                value={ambulanceCodeToDelete}
+                                onChange={(event) => setAmbulanceCodeToDelete(event.target.value)}
+                                placeholder="AMB-XXX"
+                            />
+                        </label>
+                    </div>
+
+                    <div className="form-actions">
+                        <button type="submit" className="danger-button" disabled={isDeletingAmbulance}>
+                            {isDeletingAmbulance ? "DELETING..." : "CONFIRM DELETE"}
+                        </button>
+                    </div>
+                </form>
             )}
 
             {incident && (
