@@ -55,7 +55,7 @@ def on_message(client, userdata, message):
             ambulance = (
                 db.query(Ambulance)
                 .filter(
-                    Ambulance.code == ambulance_code
+                    Ambulance.ambulance_code == ambulance_code
                 )
                 .first()
             )
@@ -69,13 +69,13 @@ def on_message(client, userdata, message):
 
             if message_type == "location":
 
-                ambulance.latitude = payload["latitude"]
-                ambulance.longitude = payload["longitude"]
+                ambulance.current_latitude = payload["latitude"]
+                ambulance.current_longitude = payload["longitude"]
 
                 print(
                     f"{ambulance_code} location: "
-                    f"{ambulance.latitude}, "
-                    f"{ambulance.longitude}"
+                    f"{ambulance.current_latitude}, "
+                    f"{ambulance.current_longitude}"
                 )
 
             elif message_type == "status":
@@ -94,10 +94,10 @@ def on_message(client, userdata, message):
                     {
                         "type": "ambulance_update",
                         "ambulance": {
-                            "id": ambulance.id,
-                            "code": ambulance.code,
-                            "latitude": ambulance.latitude,
-                            "longitude": ambulance.longitude,
+                            "id": str(ambulance.ambulance_id),
+                            "code": ambulance.ambulance_code,
+                            "latitude": float(ambulance.current_latitude),
+                            "longitude": float(ambulance.current_longitude),
                             "status": ambulance.status,
                         },
                     }

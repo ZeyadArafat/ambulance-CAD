@@ -4,7 +4,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from .database import Base, engine
 from .models import Ambulance, Hospital, Incident 
-from .api import incidents, ambulances, dispatch
+from .api import assessments, ambulances, calls, dispatch, hospitals, incidents, patients
 from .services.mqtt_service import connect_mqtt
 from .services.websocket_manager import manager
 
@@ -48,3 +48,7 @@ async def websocket_endpoint(websocket: WebSocket):
 app.include_router(incidents.router, prefix="/api/incidents", tags=["Incidents"])
 app.include_router(ambulances.router, prefix="/api/ambulances", tags=["Ambulances"])
 app.include_router(dispatch.router, prefix="/api/dispatch", tags=["Dispatch"])
+app.include_router(calls.router, prefix="/api/calls", tags=["Emergency Calls"])
+app.include_router(hospitals.router, prefix="/api/hospitals", tags=["Hospitals"])
+app.include_router(patients.router, prefix="/api/patients", tags=["Patients"])
+app.include_router(assessments.router, prefix="/api", tags=["Prehospital Assessments"])

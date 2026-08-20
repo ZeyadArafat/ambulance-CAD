@@ -1,8 +1,5 @@
 from sqlalchemy.orm import Session
-from datetime import datetime
-
-
-from ..models import Ambulance, Incident,Dispatch, utc_now
+from ..models import Ambulance, Dispatch, DispatchAssignment, Incident, utc_now
 from .mqtt_service import publish_dispatch
 from .routing_service import get_route
 
@@ -72,8 +69,8 @@ async def recommend_ambulances(
     for ambulance in ambulances:
         try:
             route = await get_route(
-                ambulance.latitude,
-                ambulance.longitude,
+                float(ambulance.current_latitude),
+                float(ambulance.current_longitude),
                 incident.latitude,
                 incident.longitude,
             )
@@ -95,8 +92,8 @@ async def recommend_ambulances(
 
         recommendations.append(
             {
-                "ambulance_id": ambulance.id,
-                "code": ambulance.code,
+                "ambulance_id": ambulance.ambulance_id,
+                "code": ambulance.ambulance_code,
                 "ambulance_type":
                     ambulance.ambulance_type,
                 "eta_minutes":
@@ -116,15 +113,18 @@ async def recommend_ambulances(
 
 async def dispatch_ambulance(
     db: Session,
-    incident_id: int,
-    ambulance_id: int,
+    incident_id,
+    ambulance_id,
+    dispatcher_id,
+    crew_member_id,
+    override_reason: str | None = None,
     manual: bool = False,
 ):
 
     incident = (
         db.query(Incident)
         .filter(
-            Incident.id == incident_id
+            Incident.incident_id == incident_id
         )
         .first()
     )
@@ -137,7 +137,7 @@ async def dispatch_ambulance(
     ambulance = (
         db.query(Ambulance)
         .filter(
-            Ambulance.id == ambulance_id
+            Ambulance.ambulance_id == ambulance_id
         )
         .first()
     )
@@ -161,25 +161,35 @@ async def dispatch_ambulance(
         )
 
     dispatch = Dispatch(
-        incident_id=incident.id,
-        ambulance_id=ambulance.id,
-        status="dispatched",
-        dispatched_at=utc_now(),
+        incident_id=incident.incident_id,
+        dispatcher_id=dispatcher_id,
+        assigned_at=utc_now(),
+        dispatch_status="dispatched",
+        priority=incident.priority,
+        override_reason=override_reason,
     )
 
     db.add(dispatch)
 
+    assignment = DispatchAssignment(
+        dispatch_id=dispatch.dispatch_id,
+        ambulance_id=ambulance.ambulance_id,
+        crew_member_id=crew_member_id,
+        assigned_at=dispatch.assigned_at,
+        assignment_status="assigned",
+    )
+    db.add(assignment)
+
     ambulance.status = "dispatched"
 
     incident.status = "dispatched"
-    incident.assigned_ambulance_id = ambulance.id
 
     db.commit()
     db.refresh(dispatch)
 
     route = await get_route(
-        ambulance.latitude,
-        ambulance.longitude,
+        float(ambulance.current_latitude),
+        float(ambulance.current_longitude),
         incident.latitude,
         incident.longitude,
     )
@@ -187,8 +197,8 @@ async def dispatch_ambulance(
     route_coordinates = route.get("coordinates", []) if route else []
 
     publish_dispatch(
-        ambulance.code,
-        incident.id,
+        ambulance.ambulance_code,
+        str(incident.incident_id),
         incident.latitude,
         incident.longitude,
         incident.priority,

@@ -1,42 +1,67 @@
-from fastapi import APIRouter, Depends
+from datetime import datetime, timezone
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Incident
+from ..models import Incident, utc_now
 
 router = APIRouter()
 
 
 class IncidentCreate(BaseModel):
-    priority: str = Field(default="medium")
+    incident_number: str
     incident_type: str
-    description: str | None = None
+    priority: str = Field(default="medium")
+    severity: str = Field(default="moderate")
+    incident_description: str | None = None
+    location_description: str | None = None
     latitude: float
     longitude: float
+    incident_time: datetime | None = None
+    emergency_call_id: UUID | None = None
+    patient_id: UUID | None = None
 
 
 class IncidentUpdate(BaseModel):
-    priority: str | None = None
     incident_type: str | None = None
-    description: str | None = None
+    priority: str | None = None
+    severity: str | None = None
+    incident_description: str | None = None
+    location_description: str | None = None
     latitude: float | None = None
     longitude: float | None = None
     status: str | None = None
-    assigned_ambulance_id: int | None = None
 
 
-class IncidentResponse(IncidentCreate):
-    id: int
+class IncidentResponse(BaseModel):
+    incident_id: UUID
+    incident_number: str
+    incident_type: str
+    priority: str
+    severity: str
+    incident_description: str | None
+    location_description: str | None
+    latitude: float
+    longitude: float
+    incident_time: datetime
     status: str
-    assigned_ambulance_id: int | None
+    emergency_call_id: UUID | None
+    patient_id: UUID | None
+    created_at: datetime
+    updated_at: datetime
 
     model_config = {"from_attributes": True}
 
 
 @router.post("/", response_model=IncidentResponse, status_code=201)
 def create_incident(payload: IncidentCreate, db: Session = Depends(get_db)):
-    incident = Incident(**payload.model_dump())
+    values = payload.model_dump()
+    values["incident_time"] = values["incident_time"] or utc_now()
+    values["status"] = "new"
+    incident = Incident(**values)
     db.add(incident)
     db.commit()
     db.refresh(incident)
@@ -44,15 +69,24 @@ def create_incident(payload: IncidentCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/", response_model=list[IncidentResponse])
-def list_incidents(db: Session = Depends(get_db)):
-    return db.query(Incident).order_by(Incident.id.desc()).all()
+def list_incidents(
+    status: str | None = Query(default=None),
+    priority: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    query = db.query(Incident)
+    if status:
+        query = query.filter(Incident.status == status)
+    if priority:
+        query = query.filter(Incident.priority == priority)
+    return query.order_by(Incident.created_at.desc()).all()
 
 
 @router.put("/{incident_id}", response_model=IncidentResponse)
-def update_incident(incident_id: int, payload: IncidentUpdate, db: Session = Depends(get_db)):
-    incident = db.query(Incident).filter(Incident.id == incident_id).first()
+def update_incident(incident_id: UUID, payload: IncidentUpdate, db: Session = Depends(get_db)):
+    incident = db.query(Incident).filter(Incident.incident_id == incident_id).first()
     if not incident:
-        return {"error": "Incident not found"}
+        raise HTTPException(status_code=404, detail="Incident not found")
 
     for key, value in payload.model_dump(exclude_unset=True).items():
         if value is not None:
