@@ -1,6 +1,7 @@
 import json
 import os
 import asyncio
+import logging
 
 import paho.mqtt.client as mqtt
 
@@ -17,6 +18,7 @@ client = mqtt.Client(
     mqtt.CallbackAPIVersion.VERSION2,
     client_id="cad-backend",
 )
+logger = logging.getLogger(__name__)
 
 
 def on_connect(client, userdata, flags, reason_code, properties):
@@ -118,13 +120,13 @@ def connect_mqtt():
     client.on_connect = on_connect
     client.on_message = on_message
 
-    client.connect(
-        MQTT_HOST,
-        MQTT_PORT,
-        60,
-    )
-
-    client.loop_start()
+    try:
+        client.connect(MQTT_HOST, MQTT_PORT, 60)
+        client.loop_start()
+        return True
+    except OSError as exc:
+        logger.warning("MQTT unavailable at %s:%s: %s", MQTT_HOST, MQTT_PORT, exc)
+        return False
 
 
 def publish_dispatch(
@@ -148,6 +150,9 @@ def publish_dispatch(
         "priority": priority,
         "route": route_coordinates or [],
     }
+
+    if not client.is_connected():
+        raise RuntimeError("MQTT broker is not connected")
 
     client.publish(
         topic,

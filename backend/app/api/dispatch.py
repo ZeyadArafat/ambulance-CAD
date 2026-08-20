@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Ambulance, Dispatch, DispatchAssignment, Incident
-from ..services.dispatch_service import dispatch_ambulance, recommend_ambulances
+from ..services.dispatch_service import dispatch_ambulance, recommend_ambulances, transition_dispatch
 from ..services.routing_service import get_route
 
 router = APIRouter()
@@ -35,6 +35,10 @@ class DispatchResponse(BaseModel):
     notes: str | None
 
     model_config = {"from_attributes": True}
+
+
+class DispatchTransitionRequest(BaseModel):
+    status: str
 
 
 class RouteResponse(BaseModel):
@@ -84,7 +88,7 @@ async def get_ambulance_route(ambulance_id: UUID, db: Session = Depends(get_db))
     ).filter(
         Dispatch.dispatch_status.in_(["dispatched", "en_route"]),
         DispatchAssignment.ambulance_id == ambulance_id,
-    ).first()
+    ).order_by(Dispatch.assigned_at.desc()).first()
     if not dispatch:
         raise HTTPException(status_code=404, detail="Ambulance has no active dispatch")
     incident = db.query(Incident).filter(Incident.incident_id == dispatch.incident_id).first()
@@ -98,7 +102,11 @@ async def get_incident_route(incident_id: UUID, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Incident not found")
     assignment = db.query(DispatchAssignment).join(
         Dispatch, Dispatch.dispatch_id == DispatchAssignment.dispatch_id
-    ).filter(Dispatch.incident_id == incident_id).first()
+    ).filter(
+        Dispatch.incident_id == incident_id,
+        Dispatch.dispatch_status.in_(["dispatched", "en_route", "arrived_scene", "transporting"]),
+        DispatchAssignment.assignment_status.in_(["assigned", "en_route", "arrived_scene", "transporting"]),
+    ).order_by(Dispatch.assigned_at.desc()).first()
     if not assignment:
         raise HTTPException(status_code=404, detail="Incident has no ambulance assignment")
     ambulance = db.query(Ambulance).filter(Ambulance.ambulance_id == assignment.ambulance_id).first()
@@ -127,5 +135,17 @@ async def create_dispatch(request: DispatchRequest, db: Session = Depends(get_db
             request.override_reason,
             manual=request.override_reason is not None,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.patch("/{dispatch_id}/status", response_model=DispatchResponse)
+def update_dispatch_status(
+    dispatch_id: UUID,
+    request: DispatchTransitionRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return transition_dispatch(db, dispatch_id, request.status)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

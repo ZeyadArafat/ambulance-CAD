@@ -4,7 +4,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from .database import Base, engine
 from .models import Ambulance, Hospital, Incident 
-from .api import assessments, ambulances, calls, dispatch, hospitals, incidents, patients
+from .api import admin, assessments, ambulances, calls, dispatch, hospitals, incidents, patients
 from .services.mqtt_service import connect_mqtt
 from .services.websocket_manager import manager
 
@@ -26,7 +26,7 @@ app.add_middleware(
 @app.on_event("startup")
 def startup():
     Base.metadata.create_all(bind=engine)
-    connect_mqtt()  # Connect to the MQTT broker on startup
+    connect_mqtt()
 
 @app.get("/health")
 def health():
@@ -52,3 +52,4 @@ app.include_router(calls.router, prefix="/api/calls", tags=["Emergency Calls"])
 app.include_router(hospitals.router, prefix="/api/hospitals", tags=["Hospitals"])
 app.include_router(patients.router, prefix="/api/patients", tags=["Patients"])
 app.include_router(assessments.router, prefix="/api", tags=["Prehospital Assessments"])
+app.include_router(admin.router, prefix="/api/admin", tags=["Administration"])

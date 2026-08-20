@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import DispatchAssignment, PrehospitalAssessment, utc_now
+from ..models import DispatchAssignment, Patient, PrehospitalAssessment, User, utc_now
 
 router = APIRouter()
 
@@ -42,6 +42,10 @@ def create_assessment(
     ).first()
     if not assignment:
         raise HTTPException(status_code=404, detail="Dispatch assignment not found")
+    if not db.query(Patient).filter(Patient.patient_id == payload.patient_id).first():
+        raise HTTPException(status_code=404, detail="Patient not found")
+    if not db.query(User).filter(User.user_id == payload.assessed_by, User.is_active.is_(True)).first():
+        raise HTTPException(status_code=404, detail="Active assessor not found")
     assessment = PrehospitalAssessment(
         assignment_id=assignment_id,
         assessment_time=utc_now(),

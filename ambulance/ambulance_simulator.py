@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 # Database imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from backend.app.database import SessionLocal, engine
-from backend.app.models import Ambulance, Base, Incident
+from backend.app.models import Ambulance, Base, Dispatch, DispatchAssignment, Incident, utc_now
 
 # Ensure tables exist
 Base.metadata.create_all(bind=engine)
@@ -41,12 +41,12 @@ ambulance_lock = threading.Lock()
 def persist_ambulance_state(ambulance_code, state):
     db = SessionLocal()
     try:
-        ambulance = db.query(Ambulance).filter(Ambulance.code == ambulance_code).first()
+        ambulance = db.query(Ambulance).filter(Ambulance.ambulance_code == ambulance_code).first()
         if not ambulance:
             return
 
-        ambulance.latitude = float(state["latitude"])
-        ambulance.longitude = float(state["longitude"])
+        ambulance.current_latitude = float(state["latitude"])
+        ambulance.current_longitude = float(state["longitude"])
         ambulance.status = state["status"]
         db.commit()
     except Exception as exc:
@@ -200,24 +200,28 @@ def fetch_route_points(start_lat, start_lon, end_lat, end_lon):
 
 
 def mark_incident_arrived(ambulance_code, ambulance_id):
-    """Persist the arrival timestamp on the assigned incident once the ambulance reaches it."""
+    """Advance the active assignment to arrived_scene when the ambulance reaches the scene."""
     db = SessionLocal()
     try:
-        incident = (
-            db.query(Incident)
-            .filter(Incident.assigned_ambulance_id == ambulance_id)
-            .order_by(Incident.id.desc())
-            .first()
-        )
-
-        if not incident:
+        assignment = db.query(DispatchAssignment).join(
+            Dispatch, Dispatch.dispatch_id == DispatchAssignment.dispatch_id
+        ).filter(
+            DispatchAssignment.ambulance_id == ambulance_id,
+            Dispatch.dispatch_status.in_(["dispatched", "en_route"]),
+        ).order_by(Dispatch.assigned_at.desc()).first()
+        if not assignment:
             return
 
-        if incident.arrived_at is None:
-            incident.arrived_at = datetime.now(timezone.utc)
-            incident.status = "arrived"
-            db.commit()
-            print(f"[{ambulance_code}] logged arrival time for incident #{incident.id}: {incident.arrived_at.isoformat()}")
+        now = utc_now()
+        assignment.arrived_scene_at = now
+        assignment.assignment_status = "arrived_scene"
+        dispatch = db.query(Dispatch).filter(Dispatch.dispatch_id == assignment.dispatch_id).first()
+        incident = db.query(Incident).filter(Incident.incident_id == dispatch.incident_id).first()
+        dispatch.actual_arrival_time = now
+        dispatch.dispatch_status = "arrived_scene"
+        incident.status = "arrived_scene"
+        db.commit()
+        print(f"[{ambulance_code}] logged arrival at scene for incident {incident.incident_number}")
     except Exception as exc:
         print(f"[{ambulance_code}] failed to log incident arrival time: {exc}")
     finally:
@@ -234,14 +238,19 @@ def hydrate_state_from_assigned_incident(ambulance_code, state):
 
     db = SessionLocal()
     try:
-        ambulance = db.query(Ambulance).filter(Ambulance.code == ambulance_code).first()
+        ambulance = db.query(Ambulance).filter(Ambulance.ambulance_code == ambulance_code).first()
         if not ambulance:
             return
 
         incident = (
             db.query(Incident)
-            .filter(Incident.assigned_ambulance_id == ambulance.id)
-            .order_by(Incident.id.desc())
+            .join(Dispatch, Dispatch.incident_id == Incident.incident_id)
+            .join(DispatchAssignment, DispatchAssignment.dispatch_id == Dispatch.dispatch_id)
+            .filter(
+                DispatchAssignment.ambulance_id == ambulance.ambulance_id,
+                Dispatch.dispatch_status.in_(["dispatched", "en_route"]),
+            )
+            .order_by(Dispatch.assigned_at.desc())
             .first()
         )
 
@@ -355,9 +364,9 @@ def simulate_ambulance(ambulance_code, initial_lat, initial_lon, initial_status)
                             state["target_longitude"] = None
                             db = SessionLocal()
                             try:
-                                ambulance = db.query(Ambulance).filter(Ambulance.code == ambulance_code).first()
+                                ambulance = db.query(Ambulance).filter(Ambulance.ambulance_code == ambulance_code).first()
                                 if ambulance:
-                                    mark_incident_arrived(ambulance_code, ambulance.id)
+                                    mark_incident_arrived(ambulance_code, ambulance.ambulance_id)
                             finally:
                                 db.close()
                         else:
@@ -388,9 +397,9 @@ def simulate_ambulance(ambulance_code, initial_lat, initial_lon, initial_status)
                         state["target_longitude"] = None
                         db = SessionLocal()
                         try:
-                            ambulance = db.query(Ambulance).filter(Ambulance.code == ambulance_code).first()
+                            ambulance = db.query(Ambulance).filter(Ambulance.ambulance_code == ambulance_code).first()
                             if ambulance:
-                                mark_incident_arrived(ambulance_code, ambulance.id)
+                                mark_incident_arrived(ambulance_code, ambulance.ambulance_id)
                         finally:
                             db.close()
                     else:
@@ -430,22 +439,22 @@ def main():
                 ambulances = db.query(Ambulance).all()
 
                 for ambulance in ambulances:
-                    if ambulance.code in futures:
+                    if ambulance.ambulance_code in futures:
                         continue
 
-                    lat = ambulance.latitude if ambulance.latitude else 30.0444
-                    lon = ambulance.longitude if ambulance.longitude else 31.2357
+                    lat = ambulance.current_latitude if ambulance.current_latitude else 30.0444
+                    lon = ambulance.current_longitude if ambulance.current_longitude else 31.2357
                     status = ambulance.status if ambulance.status else "available"
 
                     future = executor.submit(
                         simulate_ambulance,
-                        ambulance.code,
+                        ambulance.ambulance_code,
                         lat,
                         lon,
                         status,
                     )
-                    futures[ambulance.code] = future
-                    print(f"Started simulator for {ambulance.code}")
+                    futures[ambulance.ambulance_code] = future
+                    print(f"Started simulator for {ambulance.ambulance_code}")
 
                 for code, future in list(futures.items()):
                     if future.done():

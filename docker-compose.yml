@@ -28,6 +28,11 @@ services:
       - ./infrastructure/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
       - mosquitto_data:/mosquitto/data
       - mosquitto_log:/mosquitto/log
+    healthcheck:
+      test: ["CMD-SHELL", "mosquitto_sub -h localhost -t '$$SYS/broker/version' -C 1 -W 2 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
   
   osrm:
     image: osrm/osrm-backend
@@ -57,7 +62,7 @@ services:
       postgres:
         condition: service_healthy
       mosquitto:
-        condition: service_started
+        condition: service_healthy
 
 volumes:
   postgres_data:

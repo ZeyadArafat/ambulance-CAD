@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Incident, utc_now
+from ..models import EmergencyCall, Incident, Patient, utc_now
 
 router = APIRouter()
 
@@ -58,6 +58,14 @@ class IncidentResponse(BaseModel):
 
 @router.post("/", response_model=IncidentResponse, status_code=201)
 def create_incident(payload: IncidentCreate, db: Session = Depends(get_db)):
+    if payload.emergency_call_id and not db.query(EmergencyCall).filter(
+        EmergencyCall.emergency_call_id == payload.emergency_call_id
+    ).first():
+        raise HTTPException(status_code=404, detail="Emergency call not found")
+    if payload.patient_id and not db.query(Patient).filter(
+        Patient.patient_id == payload.patient_id
+    ).first():
+        raise HTTPException(status_code=404, detail="Patient not found")
     values = payload.model_dump()
     values["incident_time"] = values["incident_time"] or utc_now()
     values["status"] = "new"

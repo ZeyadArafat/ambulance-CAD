@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Ambulance
+from ..models import Ambulance, Station, Zone
 
 router = APIRouter()
 
@@ -66,6 +66,10 @@ class AmbulanceResponse(BaseModel):
 
 @router.post("/", response_model=AmbulanceResponse, status_code=201)
 def create_ambulance(payload: AmbulanceCreate, db: Session = Depends(get_db)):
+    if not db.query(Station).filter(Station.station_id == payload.station_id).first():
+        raise HTTPException(status_code=404, detail="Station not found")
+    if not db.query(Zone).filter(Zone.zone_id == payload.zone_id).first():
+        raise HTTPException(status_code=404, detail="Zone not found")
     ambulance = Ambulance(**payload.model_dump())
     db.add(ambulance)
     db.commit()

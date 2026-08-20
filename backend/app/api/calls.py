@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import EmergencyCall
+from ..models import EmergencyCall, User
 from ..models import utc_now
 
 router = APIRouter()
@@ -35,6 +35,8 @@ class EmergencyCallUpdate(BaseModel):
 
 @router.post("/", status_code=201)
 def create_call(payload: EmergencyCallCreate, db: Session = Depends(get_db)):
+    if not db.query(User).filter(User.user_id == payload.call_taker_id, User.is_active.is_(True)).first():
+        raise HTTPException(status_code=404, detail="Active call taker not found")
     call = EmergencyCall(**payload.model_dump(), call_time=utc_now(), call_status="open")
     db.add(call)
     db.commit()

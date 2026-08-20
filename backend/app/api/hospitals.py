@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Hospital, HospitalCapacity, utc_now
+from ..models import Hospital, HospitalCapacity, User, utc_now
 
 router = APIRouter()
 
@@ -80,6 +80,8 @@ def update_hospital(hospital_id: UUID, payload: HospitalUpdate, db: Session = De
 def update_capacity(hospital_id: UUID, payload: CapacityUpdate, db: Session = Depends(get_db)):
     if not db.query(Hospital).filter(Hospital.hospital_id == hospital_id).first():
         raise HTTPException(status_code=404, detail="Hospital not found")
+    if not db.query(User).filter(User.user_id == payload.updated_by, User.is_active.is_(True)).first():
+        raise HTTPException(status_code=404, detail="Active user not found")
     capacity = HospitalCapacity(hospital_id=hospital_id, updated_at=utc_now(), **payload.model_dump())
     db.add(capacity)
     db.commit()
