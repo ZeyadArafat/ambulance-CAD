@@ -4,6 +4,7 @@ import os
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from urllib import request, parse
 
 import paho.mqtt.client as mqtt
@@ -198,6 +199,31 @@ def fetch_route_points(start_lat, start_lon, end_lat, end_lon):
     return []
 
 
+def mark_incident_arrived(ambulance_code, ambulance_id):
+    """Persist the arrival timestamp on the assigned incident once the ambulance reaches it."""
+    db = SessionLocal()
+    try:
+        incident = (
+            db.query(Incident)
+            .filter(Incident.assigned_ambulance_id == ambulance_id)
+            .order_by(Incident.id.desc())
+            .first()
+        )
+
+        if not incident:
+            return
+
+        if incident.arrived_at is None:
+            incident.arrived_at = datetime.now(timezone.utc)
+            incident.status = "arrived"
+            db.commit()
+            print(f"[{ambulance_code}] logged arrival time for incident #{incident.id}: {incident.arrived_at.isoformat()}")
+    except Exception as exc:
+        print(f"[{ambulance_code}] failed to log incident arrival time: {exc}")
+    finally:
+        db.close()
+
+
 def hydrate_state_from_assigned_incident(ambulance_code, state):
     """Resume movement for ambulances that were already dispatched before the simulator started."""
     if state["target_latitude"] is not None or state["target_longitude"] is not None:
@@ -327,6 +353,13 @@ def simulate_ambulance(ambulance_code, initial_lat, initial_lon, initial_status)
                             )
                             state["target_latitude"] = None
                             state["target_longitude"] = None
+                            db = SessionLocal()
+                            try:
+                                ambulance = db.query(Ambulance).filter(Ambulance.code == ambulance_code).first()
+                                if ambulance:
+                                    mark_incident_arrived(ambulance_code, ambulance.id)
+                            finally:
+                                db.close()
                         else:
                             state["status"] = "en_route"
                     else:
@@ -353,6 +386,13 @@ def simulate_ambulance(ambulance_code, initial_lat, initial_lon, initial_status)
                         )
                         state["target_latitude"] = None
                         state["target_longitude"] = None
+                        db = SessionLocal()
+                        try:
+                            ambulance = db.query(Ambulance).filter(Ambulance.code == ambulance_code).first()
+                            if ambulance:
+                                mark_incident_arrived(ambulance_code, ambulance.id)
+                        finally:
+                            db.close()
                     else:
                         step_ratio = min(MOVE_STEP / distance, 1.0)
                         state["latitude"] += lat_delta * step_ratio
