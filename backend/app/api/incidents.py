@@ -7,8 +7,13 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import EmergencyCall, Incident, Patient, utc_now
+from ..models import IncidentNote, User
+from ..auth import current_user
+from .schemas import NoteInput, PriorityInput
+from .router_helpers import get_or_404
 
 router = APIRouter()
+contract_router = APIRouter()
 
 
 class IncidentCreate(BaseModel):
@@ -103,3 +108,56 @@ def update_incident(incident_id: UUID, payload: IncidentUpdate, db: Session = De
     db.commit()
     db.refresh(incident)
     return incident
+
+
+@contract_router.get("/incidents/duplicates")
+def duplicate_incidents(lat: float, lng: float, radius: float = 0.01, window: int = 60, db: Session = Depends(get_db), _: User = Depends(current_user)):
+    from datetime import timedelta
+    since = utc_now() - timedelta(minutes=window)
+    return db.query(Incident).filter(Incident.status.notin_(["resolved", "cancelled"]), Incident.incident_time >= since, Incident.latitude.between(lat - radius, lat + radius), Incident.longitude.between(lng - radius, lng + radius)).all()
+
+
+@contract_router.get("/incidents/queue")
+def incident_queue(db: Session = Depends(get_db), _: User = Depends(current_user)):
+    return db.query(Incident).filter(Incident.status.in_(["new", "pending", "submitted"])).order_by(Incident.priority.desc(), Incident.created_at).all()
+
+
+@contract_router.get("/incidents/{incident_id}")
+def incident_detail(incident_id: UUID, db: Session = Depends(get_db), _: User = Depends(current_user)):
+    return get_or_404(db, Incident, Incident.incident_id, incident_id, "Incident")
+
+
+@contract_router.post("/incidents/{incident_id}/priority")
+def set_priority(incident_id: UUID, payload: PriorityInput, db: Session = Depends(get_db), _: User = Depends(current_user)):
+    incident = get_or_404(db, Incident, Incident.incident_id, incident_id, "Incident")
+    incident.priority = payload.priority
+    if payload.severity:
+        incident.severity = payload.severity
+    db.commit()
+    return incident
+
+
+@contract_router.post("/incidents/{incident_id}/submit")
+def submit_incident(incident_id: UUID, db: Session = Depends(get_db), _: User = Depends(current_user)):
+    incident = get_or_404(db, Incident, Incident.incident_id, incident_id, "Incident")
+    if incident.status not in {"new", "pending"}:
+        raise HTTPException(status_code=400, detail="Incident cannot be submitted from its current status")
+    incident.status = "submitted"
+    db.commit()
+    return incident
+
+
+@contract_router.post("/incidents/{incident_id}/notes", status_code=201)
+def add_incident_note(incident_id: UUID, payload: NoteInput, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    get_or_404(db, Incident, Incident.incident_id, incident_id, "Incident")
+    note = IncidentNote(incident_id=incident_id, author_id=user.user_id, note_text=payload.note)
+    db.add(note)
+    db.commit()
+    db.refresh(note)
+    return note
+
+
+@contract_router.get("/incidents/{incident_id}/calls")
+def incident_calls(incident_id: UUID, db: Session = Depends(get_db), _: User = Depends(current_user)):
+    get_or_404(db, Incident, Incident.incident_id, incident_id, "Incident")
+    return db.query(EmergencyCall).filter(EmergencyCall.incident_id == incident_id).all()

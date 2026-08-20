@@ -8,8 +8,13 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Hospital, HospitalCapacity, User, utc_now
+from ..models import Ambulance, Dispatch, DispatchDestination, Incident, IncidentCloseout
+from ..auth import current_user
+from .schemas import CloseoutInput, DestinationInput, StatusInput
+from .router_helpers import get_or_404
 
 router = APIRouter()
+contract_router = APIRouter()
 
 
 class HospitalCreate(BaseModel):
@@ -97,3 +102,74 @@ def get_capacity(hospital_id: UUID, db: Session = Depends(get_db)):
     if not capacity:
         raise HTTPException(status_code=404, detail="Hospital capacity not found")
     return capacity
+
+
+@contract_router.post("/units/{unit_id}/status")
+def contract_unit_status(unit_id: UUID, payload: StatusInput, db: Session = Depends(get_db), _: User = Depends(current_user)):
+    ambulance = get_or_404(db, Ambulance, Ambulance.ambulance_id, unit_id, "Unit")
+    ambulance.status = payload.status
+    db.commit()
+    return ambulance
+
+
+@contract_router.post("/units/{unit_id}/status/sync")
+def contract_sync_status(unit_id: UUID, statuses: list[StatusInput], db: Session = Depends(get_db), _: User = Depends(current_user)):
+    ambulance = get_or_404(db, Ambulance, Ambulance.ambulance_id, unit_id, "Unit")
+    for item in statuses:
+        ambulance.status = item.status
+    db.commit()
+    return {"unit_id": unit_id, "applied": len(statuses), "status": ambulance.status}
+
+
+@contract_router.get("/hospitals/capacity")
+def contract_hospital_capacity(db: Session = Depends(get_db), _: User = Depends(current_user)):
+    return db.query(Hospital).filter(Hospital.status == "active").all()
+
+
+@contract_router.post("/dispatches/{dispatch_id}/destination-hospital")
+def contract_destination_hospital(dispatch_id: UUID, payload: DestinationInput, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    get_or_404(db, Dispatch, Dispatch.dispatch_id, dispatch_id, "Dispatch")
+    get_or_404(db, Hospital, Hospital.hospital_id, payload.hospital_id, "Hospital")
+    destination = DispatchDestination(dispatch_id=dispatch_id, hospital_id=payload.hospital_id, selected_by=user.user_id)
+    db.add(destination)
+    db.commit()
+    db.refresh(destination)
+    return destination
+
+
+@contract_router.post("/incidents/{incident_id}/closeout", status_code=201)
+def contract_closeout(incident_id: UUID, payload: CloseoutInput, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    incident = get_or_404(db, Incident, Incident.incident_id, incident_id, "Incident")
+    incident.status = "resolved"
+    record = IncidentCloseout(incident_id=incident_id, submitted_by=user.user_id, **payload.model_dump())
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+    return record
+
+
+@contract_router.get("/hospitals/{hospital_id}/inbound")
+def contract_inbound(hospital_id: UUID, db: Session = Depends(get_db), _: User = Depends(current_user)):
+    return db.query(DispatchDestination).filter(DispatchDestination.hospital_id == hospital_id).all()
+
+
+@contract_router.post("/hospitals/{hospital_id}/capacity")
+def contract_capacity(hospital_id: UUID, payload: dict, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    hospital = get_or_404(db, Hospital, Hospital.hospital_id, hospital_id, "Hospital")
+    for key in ("capacity_status", "diversion_flag"):
+        if key in payload:
+            setattr(hospital, key, payload[key])
+    capacity = HospitalCapacity(hospital_id=hospital_id, updated_by=user.user_id, updated_at=utc_now(), available_beds=payload.get("available_beds", 0), emergency_beds=payload.get("emergency_beds", 0), icu_beds=payload.get("icu_beds", 0), available_ambulance_slots=payload.get("available_ambulance_slots", 0), capacity_status=payload.get("capacity_status", hospital.capacity_status), diversion_flag=payload.get("diversion_flag", hospital.diversion_flag))
+    db.add(capacity)
+    db.commit()
+    return capacity
+
+
+@contract_router.post("/hospitals/{hospital_id}/inbound/{dispatch_id}/acknowledge")
+def contract_acknowledge_inbound(hospital_id: UUID, dispatch_id: UUID, db: Session = Depends(get_db), _: User = Depends(current_user)):
+    destination = db.query(DispatchDestination).filter(DispatchDestination.hospital_id == hospital_id, DispatchDestination.dispatch_id == dispatch_id).first()
+    if not destination:
+        raise HTTPException(status_code=404, detail="Inbound notification not found")
+    destination.acknowledged_at = utc_now()
+    db.commit()
+    return destination

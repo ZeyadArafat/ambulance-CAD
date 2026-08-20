@@ -4,7 +4,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from .database import Base, engine
 from .models import Ambulance, Hospital, Incident 
-from .api import admin, assessments, ambulances, calls, dispatch, hospitals, incidents, patients
+from .api import admin, assessments, ambulances, authentication, calls, dispatch, hospitals, incidents, patients, protocols
 from .services.mqtt_service import connect_mqtt
 from .services.websocket_manager import manager
 
@@ -53,3 +53,13 @@ app.include_router(hospitals.router, prefix="/api/hospitals", tags=["Hospitals"]
 app.include_router(patients.router, prefix="/api/patients", tags=["Patients"])
 app.include_router(assessments.router, prefix="/api", tags=["Prehospital Assessments"])
 app.include_router(admin.router, prefix="/api/admin", tags=["Administration"])
+
+# Versioned contract routes live alongside their MVP domain modules.
+app.include_router(authentication.router, prefix="/api/v1", tags=["Authentication"])
+app.include_router(admin.contract_router, prefix="/api/v1", tags=["Administration"])
+app.include_router(calls.contract_router, prefix="/api/v1", tags=["Emergency Calls"])
+app.include_router(incidents.contract_router, prefix="/api/v1", tags=["Incidents"])
+app.include_router(ambulances.contract_router, prefix="/api/v1", tags=["Vehicles"])
+app.include_router(dispatch.contract_router, prefix="/api/v1", tags=["Dispatch"])
+app.include_router(hospitals.contract_router, prefix="/api/v1", tags=["Hospitals"])
+app.include_router(protocols.router, prefix="/api/v1", tags=["Protocols"])

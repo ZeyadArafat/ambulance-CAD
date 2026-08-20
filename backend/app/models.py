@@ -354,3 +354,81 @@ class AuditLog(Base):
     old_value: Mapped[str | None] = mapped_column(Text, nullable=True)
     new_value: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class IncidentNote(Base):
+    __tablename__ = "incident_notes"
+
+    note_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    incident_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("incidents.incident_id"), nullable=False)
+    author_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.user_id"), nullable=False)
+    note_text: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class DispatchMessage(Base):
+    __tablename__ = "dispatch_messages"
+
+    message_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    dispatch_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("dispatches.dispatch_id"), nullable=False)
+    sender_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.user_id"), nullable=False)
+    message_text: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class DispatchDestination(Base):
+    __tablename__ = "dispatch_destinations"
+
+    destination_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    dispatch_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("dispatches.dispatch_id"), unique=True, nullable=False)
+    hospital_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("hospitals.hospital_id"), nullable=False)
+    selected_by: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.user_id"), nullable=False)
+    selected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class IncidentCloseout(Base):
+    __tablename__ = "incident_closeouts"
+
+    closeout_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    incident_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("incidents.incident_id"), unique=True, nullable=False)
+    submitted_by: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("users.user_id"), nullable=False)
+    outcome_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    patient_handoff_confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class RosterEntry(Base):
+    __tablename__ = "roster_entries"
+
+    roster_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    staff_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("staff.staff_id"), nullable=False)
+    ambulance_id: Mapped[UUID | None] = mapped_column(Uuid(as_uuid=True), ForeignKey("ambulances.ambulance_id"), nullable=True)
+    station_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("stations.station_id"), nullable=False)
+    shift_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    shift_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), default="scheduled", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class VehicleDiagnostic(Base):
+    __tablename__ = "vehicle_diagnostics"
+
+    diagnostic_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    ambulance_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("ambulances.ambulance_id"), nullable=False)
+    diagnostic_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    severity: Mapped[str] = mapped_column(String(30), default="info", nullable=False)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class VehicleAlert(Base):
+    __tablename__ = "vehicle_alerts"
+
+    alert_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid4)
+    ambulance_id: Mapped[UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("ambulances.ambulance_id"), nullable=False)
+    alert_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    severity: Mapped[str] = mapped_column(String(30), default="warning", nullable=False)
+    acknowledged: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)

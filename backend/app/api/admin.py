@@ -9,8 +9,17 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import CrewMember, Staff, Station, User, Zone
 from ..models import utc_now
+from ..auth import current_user, hash_password, require_roles
+from ..models import Ambulance, Role, UserRole
+from .schemas import PasswordUserCreate, RoleInput, StationInput, UserPatch, VehicleInput, ZoneInput
+from .router_helpers import get_or_404
+from fastapi.responses import PlainTextResponse
+from fastapi import Query
+from sqlalchemy import func
+from ..models import AuditLog, Dispatch, Incident, RosterEntry, MaintenanceRecord
 
 router = APIRouter()
+contract_router = APIRouter()
 
 
 class UserCreate(BaseModel):
@@ -60,7 +69,7 @@ class CrewCreate(BaseModel):
     status: str = "active"
 
 
-@router.post("/users", status_code=201)
+@contract_router.post("/users", status_code=201)
 def create_user(payload: UserCreate, db: Session = Depends(get_db)):
     user = User(**payload.model_dump())
     db.add(user)
@@ -69,7 +78,7 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db)):
     return user
 
 
-@router.get("/users")
+@contract_router.get("/users")
 def list_users(db: Session = Depends(get_db)):
     return db.query(User).order_by(User.username).all()
 
@@ -132,3 +141,201 @@ def create_crew_member(payload: CrewCreate, db: Session = Depends(get_db)):
 @router.get("/crew")
 def list_crew_members(db: Session = Depends(get_db)):
     return db.query(CrewMember).filter(CrewMember.status == "active").all()
+
+
+# Versioned contract routes for administration and master data.
+@router.post("/users", status_code=201)
+def contract_create_user(payload: PasswordUserCreate, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    user = User(username=payload.username, password_hash=hash_password(payload.password), email=payload.email)
+    db.add(user)
+    db.flush()
+    for role_id in payload.role_ids:
+        get_or_404(db, Role, Role.role_id, role_id, "Role")
+        db.add(UserRole(user_id=user.user_id, role_id=role_id))
+    db.commit()
+    return {"user_id": user.user_id, "username": user.username, "email": user.email}
+
+
+@router.get("/users")
+def contract_list_users(active: bool | None = None, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    query = db.query(User)
+    if active is not None:
+        query = query.filter(User.is_active == active)
+    return [{"user_id": user.user_id, "username": user.username, "email": user.email, "is_active": user.is_active} for user in query.order_by(User.username).all()]
+
+
+@contract_router.get("/users/{user_id}")
+def contract_get_user(user_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    user = get_or_404(db, User, User.user_id, user_id, "User")
+    return {"user_id": user.user_id, "username": user.username, "email": user.email, "is_active": user.is_active}
+
+
+@contract_router.patch("/users/{user_id}")
+def contract_patch_user(user_id: UUID, payload: UserPatch, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    user = get_or_404(db, User, User.user_id, user_id, "User")
+    for key, value in payload.model_dump(exclude_unset=True, exclude={"role_ids"}).items():
+        setattr(user, key, value)
+    if payload.role_ids is not None:
+        db.query(UserRole).filter(UserRole.user_id == user_id).delete()
+        for role_id in payload.role_ids:
+            get_or_404(db, Role, Role.role_id, role_id, "Role")
+            db.add(UserRole(user_id=user_id, role_id=role_id))
+    db.commit()
+    return {"user_id": user.user_id, "is_active": user.is_active}
+
+
+@contract_router.delete("/users/{user_id}", status_code=204)
+def contract_deactivate_user(user_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    user = get_or_404(db, User, User.user_id, user_id, "User")
+    user.is_active = False
+    db.commit()
+
+
+@contract_router.get("/roles")
+def contract_list_roles(db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    return db.query(Role).order_by(Role.role_name).all()
+
+
+@contract_router.post("/roles", status_code=201)
+def contract_create_role(payload: RoleInput, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    role = Role(**payload.model_dump())
+    db.add(role)
+    db.commit()
+    db.refresh(role)
+    return role
+
+
+@contract_router.patch("/roles/{role_id}")
+def contract_patch_role(role_id: UUID, payload: RoleInput, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    role = get_or_404(db, Role, Role.role_id, role_id, "Role")
+    role.role_name = payload.role_name
+    role.description = payload.description
+    db.commit()
+    return role
+
+
+@contract_router.post("/stations", status_code=201)
+def contract_create_station(payload: StationInput, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    station = Station(**payload.model_dump())
+    db.add(station)
+    db.commit()
+    db.refresh(station)
+    return station
+
+
+@contract_router.get("/stations")
+def contract_list_stations(db: Session = Depends(get_db), _: User = Depends(current_user)):
+    return db.query(Station).order_by(Station.station_code).all()
+
+
+@contract_router.get("/stations/{station_id}")
+def contract_get_station(station_id: UUID, db: Session = Depends(get_db), _: User = Depends(current_user)):
+    return get_or_404(db, Station, Station.station_id, station_id, "Station")
+
+
+@contract_router.patch("/stations/{station_id}")
+def contract_patch_station(station_id: UUID, payload: dict, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    station = get_or_404(db, Station, Station.station_id, station_id, "Station")
+    for key in ("station_code", "station_name", "address", "latitude", "longitude", "status"):
+        if key in payload:
+            setattr(station, key, payload[key])
+    db.commit()
+    return station
+
+
+@contract_router.delete("/stations/{station_id}", status_code=204)
+def contract_deactivate_station(station_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    station = get_or_404(db, Station, Station.station_id, station_id, "Station")
+    station.status = "inactive"
+    db.commit()
+
+
+@contract_router.post("/zones", status_code=201)
+def contract_create_zone(payload: ZoneInput, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
+    zone = Zone(**payload.model_dump())
+    db.add(zone)
+    db.commit()
+    db.refresh(zone)
+    return zone
+
+
+@contract_router.get("/zones")
+def contract_list_zones(db: Session = Depends(get_db), _: User = Depends(current_user)):
+    return db.query(Zone).order_by(Zone.zone_code).all()
+
+
+@contract_router.post("/vehicles", status_code=201)
+def contract_create_vehicle(payload: VehicleInput, db: Session = Depends(get_db), _: User = Depends(require_roles("admin", "supervisor"))):
+    get_or_404(db, Station, Station.station_id, payload.station_id, "Station")
+    get_or_404(db, Zone, Zone.zone_id, payload.zone_id, "Zone")
+    vehicle = Ambulance(**payload.model_dump())
+    db.add(vehicle)
+    db.commit()
+    db.refresh(vehicle)
+    return vehicle
+
+
+@contract_router.get("/vehicles")
+def contract_list_vehicles(db: Session = Depends(get_db), _: User = Depends(current_user)):
+    return db.query(Ambulance).order_by(Ambulance.ambulance_code).all()
+
+
+@contract_router.patch("/vehicles/{vehicle_id}")
+def contract_patch_vehicle(vehicle_id: UUID, payload: dict, db: Session = Depends(get_db), _: User = Depends(current_user)):
+    vehicle = get_or_404(db, Ambulance, Ambulance.ambulance_id, vehicle_id, "Vehicle")
+    for key, value in payload.items():
+        if key in {"call_sign", "ambulance_type", "vehicle_health_status", "mileage", "station_id", "zone_id"}:
+            setattr(vehicle, key, value)
+    db.commit()
+    return vehicle
+
+
+@contract_router.post("/units/{unit_id}/reallocate")
+def contract_reallocate_unit(unit_id: UUID, station_id: UUID, zone_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_roles("admin", "supervisor"))):
+    unit = get_or_404(db, Ambulance, Ambulance.ambulance_id, unit_id, "Unit")
+    unit.station_id = station_id
+    unit.zone_id = zone_id
+    db.commit()
+    return unit
+
+
+@contract_router.get("/dashboard/fleet")
+def fleet_dashboard(db: Session = Depends(get_db), _: User = Depends(current_user)):
+    counts = dict(db.query(Ambulance.status, func.count(Ambulance.ambulance_id)).group_by(Ambulance.status).all())
+    return {"availability": counts, "open_incidents": db.query(Incident).filter(Incident.status.notin_(["resolved", "cancelled"])).count()}
+
+
+@contract_router.get("/reports/post-incident/{incident_id}")
+def post_incident_report(incident_id: UUID, db: Session = Depends(get_db), _: User = Depends(current_user)):
+    incident = get_or_404(db, Incident, Incident.incident_id, incident_id, "Incident")
+    dispatch = db.query(Dispatch).filter(Dispatch.incident_id == incident_id).order_by(Dispatch.assigned_at).first()
+    response_minutes = None
+    if dispatch and dispatch.actual_arrival_time:
+        response_minutes = round((dispatch.actual_arrival_time - incident.incident_time).total_seconds() / 60, 1)
+    return {"incident_id": incident_id, "status": incident.status, "response_minutes": response_minutes, "dispatch_id": dispatch.dispatch_id if dispatch else None}
+
+
+@contract_router.get("/alerts/zone-coverage")
+def zone_coverage(db: Session = Depends(get_db), _: User = Depends(current_user)):
+    rows = db.query(Zone.zone_id, Zone.zone_code, func.count(Ambulance.ambulance_id)).outerjoin(Ambulance, Ambulance.zone_id == Zone.zone_id).group_by(Zone.zone_id, Zone.zone_code).all()
+    return [{"zone_id": zone_id, "zone_code": code, "active_unit_count": count} for zone_id, code, count in rows]
+
+
+@contract_router.get("/audit-log")
+def audit_log(db: Session = Depends(get_db), _: User = Depends(require_roles("admin", "supervisor"))):
+    return db.query(AuditLog).order_by(AuditLog.created_at.desc()).limit(500).all()
+
+
+@contract_router.get("/reports/operational")
+def operational_report(db: Session = Depends(get_db), _: User = Depends(require_roles("admin", "supervisor"))):
+    return {"incident_count": db.query(Incident).count(), "dispatch_count": db.query(Dispatch).count(), "unit_count": db.query(Ambulance).count()}
+
+
+@contract_router.get("/reports/operational/export")
+def export_report(format: str = Query("json"), db: Session = Depends(get_db), _: User = Depends(require_roles("admin", "supervisor"))):
+    if format not in {"json", "csv"}:
+        raise HTTPException(status_code=400, detail="Supported formats: json, csv")
+    report = {"incident_count": db.query(Incident).count(), "dispatch_count": db.query(Dispatch).count(), "unit_count": db.query(Ambulance).count()}
+    if format == "csv":
+        return PlainTextResponse("metric,value\n" + "\n".join(f"{key},{value}" for key, value in report.items()), media_type="text/csv")
+    return report
