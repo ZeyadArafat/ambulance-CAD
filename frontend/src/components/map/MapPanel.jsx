@@ -1,0 +1,12 @@
+import { Map, Navigation, LocateFixed } from 'lucide-react'
+
+export default function MapPanel({ units = [], incidents = [], className = '', title = 'LIVE CAD MAP', showControls = true }) {
+  return <div className={`relative overflow-hidden border border-[#222B3A] bg-[#0C141D] ${className}`}>
+    <div className="absolute inset-0 opacity-70" style={{ backgroundImage: 'linear-gradient(#193044 1px,transparent 1px),linear-gradient(90deg,#193044 1px,transparent 1px)', backgroundSize: '44px 44px' }} />
+    <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(circle at 30% 35%, rgba(56,189,248,.08), transparent 24%), radial-gradient(circle at 70% 60%, rgba(59,130,246,.08), transparent 26%)' }} />
+    <div className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between border-b border-[#222B3A] bg-[#121620]/90 px-3 py-2"><span className="flex items-center gap-2 text-[10px] font-bold tracking-[.12em]"><Map size={13} className="text-[#38BDF8]" />{title}</span><span className="text-[10px] text-[#7E8A9A]">MOCK LOCATION VIEW</span></div>
+    {incidents.slice(0, 12).map((incident, index) => <div key={incident.id} className="absolute z-10" style={{ left: `${15 + (index * 17) % 70}%`, top: `${22 + (index * 23) % 60}%` }} title={incident.id}><div className={`h-3 w-3 rounded-full ring-4 ${incident.priority === 'ECHO' ? 'bg-[#EF4444] ring-[#EF4444]/20' : incident.priority === 'DELTA' ? 'bg-[#F97316] ring-[#F97316]/20' : 'bg-[#F59E0B] ring-[#F59E0B]/20'}`} /><span className="absolute -top-1 left-4 whitespace-nowrap text-[9px] text-[#AAB4C3]">{incident.id}</span></div>)}
+    {units.slice(0, 20).map((unit, index) => <div key={unit.id} className="absolute z-10" style={{ left: `${8 + (index * 29) % 84}%`, top: `${12 + (index * 37) % 72}%` }} title={unit.id}><div className={`h-2.5 w-2.5 rotate-45 ${unit.status === 'AVAILABLE' ? 'bg-[#22C55E]' : unit.status === 'OUT OF SERVICE' ? 'bg-[#EF4444]' : 'bg-[#38BDF8]'}`} /></div>)}
+    <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between"><div className="cad-panel px-3 py-2 text-[9px] text-[#7E8A9A]"><div className="flex gap-3"><span>• INCIDENT</span><span>◆ UNIT</span><span>Grid: 44m</span></div></div>{showControls && <div className="flex gap-2" aria-label="Map status indicators"><span className="cad-panel p-2 text-[#7E8A9A]"><LocateFixed size={14} /></span><span className="cad-panel p-2 text-[#7E8A9A]"><Navigation size={14} /></span></div>}</div>
+  </div>
+}

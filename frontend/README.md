@@ -1,16 +1,40 @@
-# React + Vite
+# Ambulance CAD Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Production-style React/Vite frontend scaffold for an ambulance/EMS Computer-Aided Dispatch system.
 
-Currently, two official plugins are available:
+## Run
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```bash
+npm install
+npm run dev
+```
 
-## React Compiler
+## Backend authentication
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+The login screen authenticates against `VITE_API_URL` (or `VITE_API_BASE_URL`) and stores the returned bearer token as `access_token` in `localStorage`. The selected role must be present in the authenticated user's backend `roles`. Supported route keys:
 
-## Expanding the Oxlint configuration
+- `call-taker`
+- `dispatcher`
+- `paramedic`
+- `hospital`
+- `operations`
+- `fleet`
+- `admin`
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+## Architecture
+
+- `src/context/CadContext.jsx` is the mock domain state boundary.
+- Replace its mock actions with API clients/WebSocket subscriptions when the backend is ready.
+- `MapPanel.jsx` is the Leaflet integration boundary. It currently renders a deterministic CAD map surface and accepts `units`, `incidents`, `routes`, and `markers`-style data through props.
+- OSRM should provide route/ETA data; MQTT/WebSocket should provide live unit state; FastAPI should expose REST/domain commands; PostGIS should remain the geospatial persistence layer.
+- No routing algorithm or OSRM behavior is faked.
+
+## Role routes
+
+`/login`, `/call-taker`, `/dispatcher`, `/paramedic`, `/hospital`, `/operations`, `/fleet`, `/admin`.
+
+Route guards enforce the authenticated backend role and redirect unauthorized workspace access back to the user's own role. The backend must allow the frontend's localhost origin through CORS.
+
+## Visual system
+
+Dark navy CAD palette, 8px spacing rhythm, 60px global header, thin borders, high-contrast emergency priority/status states, desktop command-center layouts, and mobile-oriented Paramedic workspace.

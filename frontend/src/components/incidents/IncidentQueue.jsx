@@ -1,0 +1,1 @@
+import IncidentCard from './IncidentCard'; export default function IncidentQueue({incidents,selectedId,onSelect}){return <div className="cad-scroll h-full">{incidents.map(i=><IncidentCard key={i.id} incident={i} selected={i.id===selectedId} onClick={()=>onSelect(i)}/>)}</div>}
