@@ -180,6 +180,15 @@ cd backend
 python -m uvicorn app.main:app --reload
 ```
 
+To create the initial admin account when the database has no users:
+
+```bash
+docker compose exec backend python seed.py
+```
+
+The defaults are `admin` / `admin123` / `admin@example.com`. Set `CAD_ADMIN_USERNAME`,
+`CAD_ADMIN_PASSWORD`, and `CAD_ADMIN_EMAIL` before running the seed to override them.
+
 ### Frontend Development
 
 ```bash
