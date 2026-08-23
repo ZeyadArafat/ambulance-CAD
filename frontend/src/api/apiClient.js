@@ -8,7 +8,7 @@ const API_BASE =
 
 function getStoredAuthToken() {
   try {
-    return (localStorage.getItem('access_token') || '').replace(/^Bearer\s+/i, '')
+    return localStorage.getItem('access_token') || ''
   } catch {
     return ''
   }

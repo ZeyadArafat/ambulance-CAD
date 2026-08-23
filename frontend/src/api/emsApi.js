@@ -2,6 +2,7 @@ import { apiDelete, apiGet, apiPatch, apiPost, apiPut } from './apiClient'
 
 export const listIncidents = (params = {}) => apiGet('/api/incidents/', params)
 export const createIncident = (payload) => apiPost('/api/incidents/', payload)
+export const createV1Incident = (payload) => apiPost('/api/v1/incidents', payload)
 export const updateIncident = (incidentId, payload) => apiPut(`/api/incidents/${incidentId}`, payload)
 export const getDuplicateIncidents = () => apiGet('/api/v1/incidents/duplicates')
 export const getIncidentQueue = () => apiGet('/api/v1/incidents/queue')
@@ -12,6 +13,7 @@ export const addIncidentNote = (incidentId, note) => apiPost(`/api/v1/incidents/
 export const getIncidentCalls = (incidentId) => apiGet(`/api/v1/incidents/${incidentId}/calls`)
 
 export const listUnits = () => apiGet('/api/v1/units/live')
+export const listCrewMembers = () => apiGet('/api/admin/crew')
 export const listAmbulances = () => apiGet('/api/ambulances/')
 export const createAmbulance = (payload) => apiPost('/api/ambulances/', payload)
 export const updateAmbulance = (ambulanceId, payload) => apiPut(`/api/ambulances/${ambulanceId}`, payload)

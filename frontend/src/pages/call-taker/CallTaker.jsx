@@ -50,7 +50,7 @@ export default function CallTaker() {
     setCreatedIncident(null)
   }
 
-  const submitIncident = (event) => {
+  const submitIncident = async (event) => {
     event.preventDefault()
     const nextErrors = {}
     if (!form.caller.trim()) nextErrors.caller = 'Caller name is required.'
@@ -61,7 +61,7 @@ export default function CallTaker() {
     if (!form.priority) nextErrors.priority = 'Select a triage priority.'
     if (Object.keys(nextErrors).length) return setErrors(nextErrors)
 
-    const incident = addIncident({ caller: form.caller.trim(), callback: form.phone.trim(), location: form.location.trim(), chiefComplaint: form.chiefComplaint.trim(), description: form.chiefComplaint.trim(), narrative: form.narrative.trim(), priority: form.priority })
+    const incident = await addIncident({ caller: form.caller.trim(), callback: form.phone.trim(), location: form.location.trim(), chiefComplaint: form.chiefComplaint.trim(), description: form.chiefComplaint.trim(), narrative: form.narrative.trim(), priority: form.priority })
     setCreatedIncident(incident)
     setSelectedId(incident.id)
     setNoteIncident(incident.id)

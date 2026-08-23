@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
   ArrowUp,
@@ -52,6 +52,10 @@ export default function Dispatcher() {
     sendMessage,
     appendNote,
     updateIncidentStatus,
+    requestDispatchRecommendation,
+    fetchDispatchRoute,
+    dispatchRecommendations,
+    dispatchRoutes,
   } = useCad()
 
   const [selectedId, setSelectedId] = useState(incidents[0]?.id || '')
@@ -75,8 +79,16 @@ export default function Dispatcher() {
   const selected = incidents.find((incident) => incident.id === selectedId) || sortedIncidents[0] || null
   const availableUnits = units.filter((unit) => unit.status === 'AVAILABLE')
   const assignedUnit = units.find((unit) => unit.id === selected?.assignedUnit)
-  const recommendedUnit = availableUnits[0] || assignedUnit || null
+  const backendRecommendations = selected?.incident_id ? dispatchRecommendations[selected.incident_id] || [] : []
+  const backendRoute = selected?.incident_id ? dispatchRoutes[selected.incident_id] : null
+  const recommendedUnit = availableUnits.find((unit) => unit.ambulance_id === backendRecommendations[0]?.ambulance_id) || availableUnits[0] || assignedUnit || null
   const chosenUnit = units.find((unit) => unit.id === selectedUnitId) || assignedUnit || recommendedUnit
+
+  useEffect(() => {
+    if (!selected?.incident_id) return
+    requestDispatchRecommendation(selected.incident_id)
+    if (selected.assignedUnit) fetchDispatchRoute(selected.incident_id)
+  }, [selected?.incident_id, selected?.assignedUnit])
 
   const duplicateIncident = useMemo(() => {
     if (!selected || !selected.location) return null
@@ -281,7 +293,7 @@ export default function Dispatcher() {
                     </div>
                     <div>
                       <div className="cad-label mb-1">ETA</div>
-                      <div className="text-sm font-semibold text-[#38BDF8]">{chosenUnit?.eta ?? '—'} min</div>
+                      <div className="text-sm font-semibold text-[#38BDF8]">{backendRoute?.eta_minutes ?? backendRecommendations[0]?.eta_minutes ?? chosenUnit?.eta ?? '—'} min</div>
                     </div>
                   </div>
 
@@ -326,7 +338,7 @@ export default function Dispatcher() {
                   <div className="rounded border border-[#222B3A] bg-[#0E141B] p-3">
                     <div className="flex items-center justify-between">
                       <span className="cad-label mb-0">RECOMMENDED RESPONSE</span>
-                      <span className="text-[10px] font-bold text-[#38BDF8]">{chosenUnit?.eta ?? '—'} min</span>
+                      <span className="text-[10px] font-bold text-[#38BDF8]">{backendRoute?.eta_minutes ?? backendRecommendations[0]?.eta_minutes ?? chosenUnit?.eta ?? '—'} min</span>
                     </div>
                     {chosenUnit ? (
                       <>
@@ -334,7 +346,7 @@ export default function Dispatcher() {
                           <span>{chosenUnit.id} · {chosenUnit.callSign}</span>
                           <span>{chosenUnit.capability}</span>
                         </div>
-                        <div className="mt-1 text-[10px] text-[#7E8A9A]">{chosenUnit.distance} mi · {chosenUnit.status} · {chosenUnit.homeZone}</div>
+                        <div className="mt-1 text-[10px] text-[#7E8A9A]">{backendRoute?.distance_km ?? backendRecommendations[0]?.distance_km ?? chosenUnit.distance} km · {chosenUnit.status} · {chosenUnit.homeZone}</div>
                       </>
                     ) : (
                       <p className="mt-2 text-[11px] text-[#FCA5A5]">No available unit can be recommended.</p>
@@ -436,7 +448,7 @@ export default function Dispatcher() {
               <div className="flex items-center gap-2 text-[10px] font-bold tracking-[0.12em] text-[#7E8A9A]">
                 <Clock3 size={14} className="text-[#38BDF8]" /> ETA / STATUS
               </div>
-              <div className="mt-3 text-3xl font-bold text-[#38BDF8]">{chosenUnit?.eta ?? '—'} <span className="text-xs font-normal text-[#7E8A9A]">MIN</span></div>
+              <div className="mt-3 text-3xl font-bold text-[#38BDF8]">{backendRoute?.eta_minutes ?? backendRecommendations[0]?.eta_minutes ?? chosenUnit?.eta ?? '—'} <span className="text-xs font-normal text-[#7E8A9A]">MIN</span></div>
               <div className="mt-3 space-y-2 text-[11px] text-[#AAB4C3]">
                 <div className="flex items-center justify-between">
                   <span>Selected unit</span>

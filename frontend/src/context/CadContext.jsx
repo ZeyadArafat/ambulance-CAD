@@ -7,12 +7,16 @@ import { maintenance } from '../data/mockMaintenance'
 import { initialMessages } from '../data/mockMessages'
 import {
   addIncidentNote,
-  createIncident,
+  createV1Call,
+  createV1Incident,
   createDispatch,
   getDispatchEta,
+  getDispatchRecommendation,
+  getDispatchRouteForIncident,
   getIncidentById,
   getIncidentQueue,
   listIncidents,
+  listCrewMembers,
   listUnits,
   patchDispatch,
   sendDispatchMessage,
@@ -119,7 +123,17 @@ const coerceArray = (payload) => {
   return []
 }
 
-const buildIncidentApiPayload = (payload) => {
+const buildCallApiPayload = (payload) => ({
+  caller_name: payload.caller,
+  caller_phone: payload.callback,
+  narrative: payload.narrative || null,
+  chief_complaint: payload.chiefComplaint || null,
+  location_description: payload.location || null,
+  latitude: Number(payload.latitude ?? 0),
+  longitude: Number(payload.longitude ?? 0),
+})
+
+const buildIncidentApiPayload = (payload, emergencyCallId = null) => {
   const incidentType = payload.incident_type || payload.chiefComplaint || payload.incidentType || 'Medical'
   const description = payload.description || payload.narrative || payload.chiefComplaint || ''
 
@@ -133,27 +147,34 @@ const buildIncidentApiPayload = (payload) => {
     latitude: Number(payload.latitude ?? 0),
     longitude: Number(payload.longitude ?? 0),
     incident_time: new Date().toISOString(),
-    emergency_call_id: payload.emergency_call_id || null,
+    emergency_call_id: emergencyCallId || payload.emergency_call_id || null,
     patient_id: payload.patient_id || null,
   }
 }
 
 const attemptBackendSync = async () => {
   try {
-    const [incidentResponse, unitResponse, queueResponse] = await Promise.all([
+    const [incidentResponse, unitResponse, queueResponse, crewResponse] = await Promise.all([
       listIncidents({}),
       listUnits(),
       getIncidentQueue(),
+      listCrewMembers(),
     ])
 
     const incidentList = coerceArray(incidentResponse)
     const unitList = coerceArray(unitResponse)
     const queueList = coerceArray(queueResponse)
+    const crewList = coerceArray(crewResponse)
+    const crewByAmbulanceId = new Map(crewList.map((crew) => [String(crew.ambulance_id), crew]))
+    const liveUnits = unitList.map((item, index) => ({
+      ...item,
+      ...(crewByAmbulanceId.get(String(item.ambulance_id)) || {}),
+    }))
 
     return {
       success: true,
       incidents: incidentList.length ? incidentList.map((item, index) => normalizeIncident(item, `CAD-${index + 1}`)) : (queueList.length ? queueList.map((item, index) => normalizeIncident(item, `CAD-${index + 1}`)) : initialIncidents),
-      units: unitList.length ? unitList.map((item, index) => normalizeUnit(item, `AMB-${String(index + 1).padStart(2, '0')}`)) : initialUnits,
+      units: liveUnits.length ? liveUnits.map((item, index) => normalizeUnit(item, `AMB-${String(index + 1).padStart(2, '0')}`)) : initialUnits,
     }
   } catch (error) {
     return {
@@ -174,6 +195,8 @@ export function CadProvider({ children }) {
   const [backendAvailable, setBackendAvailable] = useState(false)
   const [backendAuthenticated, setBackendAuthenticated] = useState(Boolean(localStorage.getItem('access_token')))
   const [backendError, setBackendError] = useState('')
+  const [dispatchRecommendations, setDispatchRecommendations] = useState({})
+  const [dispatchRoutes, setDispatchRoutes] = useState({})
 
   useEffect(() => {
     let isMounted = true
@@ -350,8 +373,9 @@ export function CadProvider({ children }) {
     }
 
     try {
-      const backendPayload = buildIncidentApiPayload(payload)
-      const backendIncident = await createIncident(backendPayload)
+      const backendCall = await createV1Call(buildCallApiPayload(payload))
+      const backendPayload = buildIncidentApiPayload(payload, backendCall?.emergency_call_id)
+      const backendIncident = await createV1Incident(backendPayload)
       const createdIncident = normalizeIncident(backendIncident, localIncident.id)
       setBackendAvailable(true)
       setBackendError('')
@@ -731,6 +755,33 @@ export function CadProvider({ children }) {
     }
   }
 
+  const requestDispatchRecommendation = async (incidentId) => {
+    try {
+      const response = await getDispatchRecommendation(incidentId)
+      setDispatchRecommendations((prev) => ({ ...prev, [incidentId]: response?.recommendations || [] }))
+      setBackendAvailable(true)
+      setBackendError('')
+      return response
+    } catch (error) {
+      setBackendAvailable(false)
+      setBackendError(error.message || 'dispatch-recommendation-failed')
+      return null
+    }
+  }
+
+  const fetchDispatchRoute = async (incidentId) => {
+    try {
+      const response = await getDispatchRouteForIncident(incidentId)
+      setDispatchRoutes((prev) => ({ ...prev, [incidentId]: response }))
+      setBackendAvailable(true)
+      setBackendError('')
+      return response
+    } catch (error) {
+      setBackendError(error.message || 'dispatch-route-failed')
+      return null
+    }
+  }
+
   const refreshQueue = async () => {
     const next = await attemptBackendSync()
     if (next.success) {
@@ -805,6 +856,10 @@ export function CadProvider({ children }) {
 
       submitIncident,
       fetchDispatchEta,
+      requestDispatchRecommendation,
+      fetchDispatchRoute,
+      dispatchRecommendations,
+      dispatchRoutes,
       refreshQueue,
 
       loginAs,
@@ -834,6 +889,8 @@ export function CadProvider({ children }) {
       backendAuthenticated,
       backendError,
       currentUser,
+      dispatchRecommendations,
+      dispatchRoutes,
     ]
   )
 
