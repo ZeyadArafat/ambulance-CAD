@@ -1,12 +1,140 @@
 import { Map, Navigation, LocateFixed } from 'lucide-react'
 
+import { useEffect, useMemo, useRef } from 'react'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
+
+const CITY_CENTER = [30.0444, 31.2357]
+const FALLBACK_INCIDENTS = [
+  [30.0472, 31.2385],
+  [30.0338, 31.2215],
+  [30.0507, 31.2512],
+  [30.0411, 31.2679],
+  [30.0585, 31.2484],
+  [30.0378, 31.2137],
+]
+const FALLBACK_UNITS = [
+  [30.0418, 31.2327],
+  [30.0524, 31.2381],
+  [30.0359, 31.2492],
+  [30.0456, 31.2648],
+  [30.0598, 31.2283],
+]
+
+const normalizeCoordinate = (value, axis) => {
+  const num = Number(value)
+
+  if (!Number.isFinite(num)) return null
+  if (axis === 'lat' && (num < -90 || num > 90)) return null
+  if (axis === 'lng' && (num < -180 || num > 180)) return null
+
+  return num
+}
+
+const getMarkerPosition = (item, index, fallback) => {
+  const lat = normalizeCoordinate(item?.latitude ?? item?.lat, 'lat')
+  const lng = normalizeCoordinate(item?.longitude ?? item?.lng ?? item?.lon, 'lng')
+
+  if (lat !== null && lng !== null) {
+    return [lat, lng]
+  }
+
+  return fallback[index % fallback.length]
+}
+
 export default function MapPanel({ units = [], incidents = [], className = '', title = 'LIVE CAD MAP', showControls = true }) {
+  const mapRef = useRef(null)
+  const mapInstanceRef = useRef(null)
+  const layerGroupRef = useRef(null)
+
+  useEffect(() => {
+    if (!mapRef.current || mapInstanceRef.current) return
+
+    const map = L.map(mapRef.current, {
+      zoomControl: false,
+      attributionControl: false,
+      dragging: true,
+      scrollWheelZoom: true,
+    }).setView(CITY_CENTER, 12)
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map)
+
+    L.control.attribution({ position: 'bottomright', prefix: false }).addTo(map)
+    L.control.zoom({ position: 'bottomright' }).addTo(map)
+
+    const layerGroup = L.layerGroup().addTo(map)
+    mapInstanceRef.current = map
+    layerGroupRef.current = layerGroup
+
+    return () => {
+      layerGroup.clearLayers()
+      map.remove()
+      mapInstanceRef.current = null
+      layerGroupRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    const map = mapInstanceRef.current
+    const layerGroup = layerGroupRef.current
+
+    if (!map || !layerGroup) return
+
+    layerGroup.clearLayers()
+
+    incidents.slice(0, 12).forEach((incident, index) => {
+      const position = getMarkerPosition(incident, index, FALLBACK_INCIDENTS)
+      const priorityColor = incident.priority === 'ECHO' ? '#EF4444' : incident.priority === 'DELTA' ? '#F97316' : '#F59E0B'
+
+      const circle = L.circleMarker(position, {
+        radius: 8,
+        color: '#0B0F14',
+        weight: 2,
+        fillColor: priorityColor,
+        fillOpacity: 0.95,
+      })
+
+      circle.bindTooltip(incident.id || `Incident ${index + 1}`)
+      circle.addTo(layerGroup)
+    })
+
+    units.slice(0, 20).forEach((unit, index) => {
+      const position = getMarkerPosition(unit, index, FALLBACK_UNITS)
+      const statusColor = unit.status === 'AVAILABLE' ? '#22C55E' : unit.status === 'OUT OF SERVICE' ? '#EF4444' : '#38BDF8'
+
+      const marker = L.circleMarker(position, {
+        radius: 6,
+        color: '#0B0F14',
+        weight: 2,
+        fillColor: statusColor,
+        fillOpacity: 0.9,
+      })
+
+      marker.bindTooltip(unit.id || `Unit ${index + 1}`)
+      marker.addTo(layerGroup)
+    })
+
+    if (incidents.length || units.length) {
+      const validPoints = [
+        ...incidents.slice(0, 12).map((incident, index) => getMarkerPosition(incident, index, FALLBACK_INCIDENTS)),
+        ...units.slice(0, 20).map((unit, index) => getMarkerPosition(unit, index, FALLBACK_UNITS)),
+      ].filter(Boolean)
+
+      if (validPoints.length) {
+        const bounds = L.latLngBounds(validPoints)
+        map.fitBounds(bounds.pad(0.35), { animate: false, maxZoom: 13 })
+      }
+    }
+  }, [incidents, units])
+
+  const panelLabel = useMemo(() => showControls ? 'LIVE LOCATION VIEW' : 'LOCATION VIEW', [showControls])
+
   return <div className={`relative overflow-hidden border border-[#222B3A] bg-[#0C141D] ${className}`}>
-    <div className="absolute inset-0 opacity-70" style={{ backgroundImage: 'linear-gradient(#193044 1px,transparent 1px),linear-gradient(90deg,#193044 1px,transparent 1px)', backgroundSize: '44px 44px' }} />
-    <div className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(circle at 30% 35%, rgba(56,189,248,.08), transparent 24%), radial-gradient(circle at 70% 60%, rgba(59,130,246,.08), transparent 26%)' }} />
-    <div className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between border-b border-[#222B3A] bg-[#121620]/90 px-3 py-2"><span className="flex items-center gap-2 text-[10px] font-bold tracking-[.12em]"><Map size={13} className="text-[#38BDF8]" />{title}</span><span className="text-[10px] text-[#7E8A9A]">MOCK LOCATION VIEW</span></div>
-    {incidents.slice(0, 12).map((incident, index) => <div key={incident.id} className="absolute z-10" style={{ left: `${15 + (index * 17) % 70}%`, top: `${22 + (index * 23) % 60}%` }} title={incident.id}><div className={`h-3 w-3 rounded-full ring-4 ${incident.priority === 'ECHO' ? 'bg-[#EF4444] ring-[#EF4444]/20' : incident.priority === 'DELTA' ? 'bg-[#F97316] ring-[#F97316]/20' : 'bg-[#F59E0B] ring-[#F59E0B]/20'}`} /><span className="absolute -top-1 left-4 whitespace-nowrap text-[9px] text-[#AAB4C3]">{incident.id}</span></div>)}
-    {units.slice(0, 20).map((unit, index) => <div key={unit.id} className="absolute z-10" style={{ left: `${8 + (index * 29) % 84}%`, top: `${12 + (index * 37) % 72}%` }} title={unit.id}><div className={`h-2.5 w-2.5 rotate-45 ${unit.status === 'AVAILABLE' ? 'bg-[#22C55E]' : unit.status === 'OUT OF SERVICE' ? 'bg-[#EF4444]' : 'bg-[#38BDF8]'}`} /></div>)}
-    <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between"><div className="cad-panel px-3 py-2 text-[9px] text-[#7E8A9A]"><div className="flex gap-3"><span>• INCIDENT</span><span>◆ UNIT</span><span>Grid: 44m</span></div></div>{showControls && <div className="flex gap-2" aria-label="Map status indicators"><span className="cad-panel p-2 text-[#7E8A9A]"><LocateFixed size={14} /></span><span className="cad-panel p-2 text-[#7E8A9A]"><Navigation size={14} /></span></div>}</div>
+    <div className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between border-b border-[#222B3A] bg-[#121620]/90 px-3 py-2"><span className="flex items-center gap-2 text-[10px] font-bold tracking-[.12em]"><Map size={13} className="text-[#38BDF8]" />{title}</span><span className="text-[10px] text-[#7E8A9A]">{panelLabel}</span></div>
+    <div ref={mapRef} className="h-full w-full" />
+    <div className="pointer-events-none absolute bottom-3 left-3 right-3 z-[500] flex items-end justify-between"><div className="cad-panel pointer-events-auto px-3 py-2 text-[9px] text-[#7E8A9A]"><div className="flex gap-3"><span>• INCIDENT</span><span>◆ UNIT</span><span>OSM</span></div></div>{showControls && <div className="pointer-events-auto flex gap-2" aria-label="Map status indicators"><span className="cad-panel p-2 text-[#7E8A9A]"><LocateFixed size={14} /></span><span className="cad-panel p-2 text-[#7E8A9A]"><Navigation size={14} /></span></div>}</div>
   </div>
 }

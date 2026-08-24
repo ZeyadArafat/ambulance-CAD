@@ -1,13 +1,11 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import { initialIncidents } from '../data/mockIncidents'
-import { initialUnits } from '../data/mockUnits'
 import { hospitals } from '../data/mockHospitals'
 import { users } from '../data/mockUsers'
 import { maintenance } from '../data/mockMaintenance'
-import { initialMessages } from '../data/mockMessages'
 import {
   addIncidentNote,
   createIncident,
+  createV1Call,
   createDispatch,
   getDispatchEta,
   getIncidentById,
@@ -119,6 +117,53 @@ const coerceArray = (payload) => {
   return []
 }
 
+const normalizeCoordinate = (value, axis) => {
+  const num = Number(value)
+
+  if (!Number.isFinite(num)) return null
+  if (axis === 'lat' && (num < -90 || num > 90)) return null
+  if (axis === 'lng' && (num < -180 || num > 180)) return null
+
+  return num
+}
+
+const geocodeAddress = async (location) => {
+  const text = String(location || '').trim()
+
+  if (!text) return null
+
+  try {
+    const query = new URLSearchParams({
+      q: text.includes('egypt') ? text : `${text}, Egypt`,
+      format: 'jsonv2',
+      limit: '1',
+    })
+
+    const response = await fetch(`https://nominatim.openstreetmap.org/search?${query.toString()}`, {
+      headers: {
+        Accept: 'application/json',
+        'Accept-Language': 'en',
+      },
+    })
+
+    if (!response.ok) return null
+
+    const result = await response.json()
+    const match = result?.[0]
+
+    if (!match) return null
+
+    const lat = normalizeCoordinate(match.lat, 'lat')
+    const lng = normalizeCoordinate(match.lon, 'lng')
+
+    if (lat === null || lng === null) return null
+
+    return { latitude: lat, longitude: lng }
+  } catch (error) {
+    return null
+  }
+}
+
 const buildIncidentApiPayload = (payload) => {
   const incidentType = payload.incident_type || payload.chiefComplaint || payload.incidentType || 'Medical'
   const description = payload.description || payload.narrative || payload.chiefComplaint || ''
@@ -130,8 +175,8 @@ const buildIncidentApiPayload = (payload) => {
     severity: payload.severity || 'moderate',
     incident_description: description,
     location_description: payload.location || '',
-    latitude: Number(payload.latitude ?? 0),
-    longitude: Number(payload.longitude ?? 0),
+    latitude: normalizeCoordinate(payload.latitude, 'lat') ?? 30.0444,
+    longitude: normalizeCoordinate(payload.longitude, 'lng') ?? 31.2357,
     incident_time: new Date().toISOString(),
     emergency_call_id: payload.emergency_call_id || null,
     patient_id: payload.patient_id || null,
@@ -152,23 +197,27 @@ const attemptBackendSync = async () => {
 
     return {
       success: true,
-      incidents: incidentList.length ? incidentList.map((item, index) => normalizeIncident(item, `CAD-${index + 1}`)) : (queueList.length ? queueList.map((item, index) => normalizeIncident(item, `CAD-${index + 1}`)) : initialIncidents),
-      units: unitList.length ? unitList.map((item, index) => normalizeUnit(item, `AMB-${String(index + 1).padStart(2, '0')}`)) : initialUnits,
+      incidents: incidentList.length
+        ? incidentList.map((item, index) => normalizeIncident(item, `CAD-${index + 1}`))
+        : queueList.map((item, index) => normalizeIncident(item, `CAD-${index + 1}`)),
+      units: unitList.length
+        ? unitList.map((item, index) => normalizeUnit(item, `AMB-${String(index + 1).padStart(2, '0')}`))
+        : [],
     }
   } catch (error) {
     return {
       success: false,
       reason: localStorage.getItem('access_token') ? (error.message || 'unavailable') : 'authentication-required',
-      incidents: initialIncidents,
-      units: initialUnits,
+      incidents: [],
+      units: [],
     }
   }
 }
 
 export function CadProvider({ children }) {
-  const [incidents, setIncidents] = useState(initialIncidents)
-  const [units, setUnits] = useState(initialUnits)
-  const [messages, setMessages] = useState(initialMessages)
+  const [incidents, setIncidents] = useState([])
+  const [units, setUnits] = useState([])
+  const [messages, setMessages] = useState([])
   const [notifications, setNotifications] = useState([])
   const [loading, setLoading] = useState(false)
   const [backendAvailable, setBackendAvailable] = useState(false)
@@ -337,8 +386,14 @@ export function CadProvider({ children }) {
   }
 
   const addIncident = async (payload) => {
+    const geocodedLocation = await geocodeAddress(payload.location).catch(() => null)
+    const resolvedLatitude = normalizeCoordinate(payload.latitude, 'lat') ?? geocodedLocation?.latitude ?? 30.0444
+    const resolvedLongitude = normalizeCoordinate(payload.longitude, 'lng') ?? geocodedLocation?.longitude ?? 31.2357
+
     const localIncident = {
       ...payload,
+      latitude: resolvedLatitude,
+      longitude: resolvedLongitude,
       id: `CAD-${Date.now()}`,
       time: new Date().toLocaleTimeString([], {
         hour: '2-digit',
@@ -350,9 +405,39 @@ export function CadProvider({ children }) {
     }
 
     try {
-      const backendPayload = buildIncidentApiPayload(payload)
-      const backendIncident = await createIncident(backendPayload)
-      const createdIncident = normalizeIncident(backendIncident, localIncident.id)
+      const callTakerId = currentUser?.backendProfile?.user_id
+      if (!callTakerId) throw new Error('Authenticated call-taker profile is unavailable.')
+
+      const emergencyCall = await createV1Call({
+        caller_name: payload.caller,
+        caller_phone: payload.callback,
+        call_source: 'phone',
+        narrative: payload.narrative,
+        chief_complaint: payload.chiefComplaint,
+        location_description: payload.location,
+        latitude: resolvedLatitude,
+        longitude: resolvedLongitude,
+      })
+
+      const backendPayload = buildIncidentApiPayload({
+        ...payload,
+        latitude: resolvedLatitude,
+        longitude: resolvedLongitude,
+      })
+      const backendIncident = await createIncident({
+        ...backendPayload,
+        emergency_call_id: emergencyCall.emergency_call_id,
+      })
+      await submitIncidentApi(backendIncident.incident_id)
+      const submittedIncident = await getIncidentById(backendIncident.incident_id)
+      const createdIncident = normalizeIncident({
+        ...submittedIncident,
+        caller: payload.caller,
+        callback: payload.callback,
+        chiefComplaint: payload.chiefComplaint,
+        narrative: payload.narrative,
+        emergency_call_id: emergencyCall.emergency_call_id,
+      }, localIncident.id)
       setBackendAvailable(true)
       setBackendError('')
 
