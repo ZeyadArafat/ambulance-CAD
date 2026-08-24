@@ -13,6 +13,24 @@ from sqlalchemy.orm import Session
 from .database import get_db
 from .models import Role, User, UserRole
 
+
+DEFAULT_ROLE_DEFINITIONS = (
+    ("call-taker", "Emergency call intake and incident creation"),
+    ("dispatcher", "Unit assignment and active incident coordination"),
+    ("paramedic", "Field response and patient handoff"),
+    ("hospital", "Inbound patient and capacity management"),
+    ("operations-supervisor", "Fleet-wide operational oversight"),
+    ("fleet-maintenance", "Vehicle diagnostics and maintenance"),
+    ("admin", "System administrator"),
+)
+
+
+def ensure_default_roles(db: Session) -> None:
+    existing_roles = {role.role_name for role in db.query(Role).all()}
+    for role_name, description in DEFAULT_ROLE_DEFINITIONS:
+        if role_name not in existing_roles:
+            db.add(Role(role_name=role_name, description=description))
+
 SECRET = os.getenv("CAD_AUTH_SECRET", "change-this-cad-secret")
 TOKEN_TTL_MINUTES = int(os.getenv("CAD_TOKEN_TTL_MINUTES", "60"))
 bearer = HTTPBearer(auto_error=False)

@@ -1,6 +1,6 @@
 import os
 
-from app.auth import hash_password
+from app.auth import ensure_default_roles, hash_password
 from app.database import Base, SessionLocal, engine
 from app.models import Role, User, UserRole
 
@@ -13,14 +13,12 @@ def seed_admin() -> bool:
     email = os.getenv("CAD_ADMIN_EMAIL", "admin@example.com")
 
     with SessionLocal.begin() as db:
+        ensure_default_roles(db)
+
         if db.query(User).first() is not None:
             return False
 
-        admin_role = db.query(Role).filter(Role.role_name == "admin").one_or_none()
-        if admin_role is None:
-            admin_role = Role(role_name="admin", description="System administrator")
-            db.add(admin_role)
-            db.flush()
+        admin_role = db.query(Role).filter(Role.role_name == "admin").one()
 
         admin_user = User(
             username=username,

@@ -1,0 +1,1 @@
+export default function FilterBar({children}){return <div className="flex flex-wrap gap-2 items-center">{children}</div>}

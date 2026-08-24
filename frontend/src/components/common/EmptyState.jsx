@@ -1,0 +1,1 @@
+export default function EmptyState({title='No records',message='Nothing requires attention.'}){return <div className="p-8 text-center text-[#7E8A9A]"><div className="text-sm font-semibold text-[#AAB4C3]">{title}</div><p className="text-xs mt-1">{message}</p></div>}

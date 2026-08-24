@@ -6,3 +6,4 @@ geoalchemy2
 pydantic
 paho-mqtt
 httpx
+reportlab

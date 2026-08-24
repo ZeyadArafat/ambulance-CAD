@@ -1,0 +1,1 @@
+import {Search} from 'lucide-react'; export default function SearchInput({value,onChange,placeholder='Search...'}){return <div className="relative"><Search size={14} className="absolute left-3 top-2.5 text-[#7E8A9A]"/><input value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} className="cad-input pl-9"/></div>}

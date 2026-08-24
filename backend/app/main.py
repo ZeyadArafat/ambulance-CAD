@@ -2,7 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import WebSocket, WebSocketDisconnect
 
-from .database import Base, engine
+from .database import Base, SessionLocal, engine
+from .auth import ensure_default_roles
 from .models import Ambulance, Hospital, Incident 
 from .api import admin, assessments, ambulances, authentication, calls, dispatch, hospitals, incidents, patients, protocols
 from .services.mqtt_service import connect_mqtt
@@ -28,6 +29,8 @@ app.add_middleware(
 @app.on_event("startup")
 def startup():
     Base.metadata.create_all(bind=engine)
+    with SessionLocal.begin() as db:
+        ensure_default_roles(db)
     connect_mqtt()
 
 @app.get("/health")

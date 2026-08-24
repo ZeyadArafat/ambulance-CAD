@@ -1,0 +1,316 @@
+\n===== ./README.md =====
+# Ambulance CAD Frontend
+
+Production-style React/Vite frontend scaffold for an ambulance/EMS Computer-Aided Dispatch system.
+
+## Run
+
+```bash
+npm install
+npm run dev
+```
+
+## Demo authentication
+
+The login screen writes `cad_role` to `localStorage`. Supported keys:
+
+- `call-taker`
+- `dispatcher`
+- `paramedic`
+- `hospital`
+- `operations`
+- `fleet`
+- `admin`
+
+## Architecture
+
+- `src/context/CadContext.jsx` is the mock domain state boundary.
+- Replace its mock actions with API clients/WebSocket subscriptions when the backend is ready.
+- `MapPanel.jsx` is the Leaflet integration boundary. It currently renders a deterministic CAD map surface and accepts `units`, `incidents`, `routes`, and `markers`-style data through props.
+- OSRM should provide route/ETA data; MQTT/WebSocket should provide live unit state; FastAPI should expose REST/domain commands; PostGIS should remain the geospatial persistence layer.
+- No routing algorithm or OSRM behavior is faked.
+
+## Role routes
+
+`/login`, `/call-taker`, `/dispatcher`, `/paramedic`, `/hospital`, `/operations`, `/fleet`, `/admin`.
+
+Route guards enforce the selected demo role and redirect unauthorized workspace access back to the user's own role.
+
+## Visual system
+
+Dark navy CAD palette, 8px spacing rhythm, 60px global header, thin borders, high-contrast emergency priority/status states, desktop command-center layouts, and mobile-oriented Paramedic workspace.
+\n===== ./index.html =====
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0B0F14" />
+    <title>Ambulance CAD</title>
+  </head>
+  <body><div id="root"></div><script type="module" src="/src/main.jsx"></script></body>
+</html>\n===== ./package.json =====
+{
+  "name": "ems-cad-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {"dev": "vite", "build": "vite build", "preview": "vite preview"},
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.16",
+    "vite": "^6.0.5"
+  }
+}\n===== ./postcss.config.js =====
+export default { plugins: { tailwindcss: {}, autoprefixer: {} } }\n===== ./src/App.jsx =====
+import { CadProvider } from './context/CadContext'
+import AppRoutes from './routes/AppRoutes'
+export default function App() {
+  return <CadProvider><AppRoutes /></CadProvider>
+}
+\n===== ./src/components/common/ActionButton.jsx =====
+export default function ActionButton({children,onClick,variant='secondary',icon:Icon,disabled=false,className=''}){const v={primary:'bg-[#2563EB] hover:bg-[#3B82F6] text-white border-[#3B82F6]',danger:'bg-[#7F1D1D] hover:bg-[#991B1B] text-white border-[#EF4444]/50',warning:'bg-[#78350F] hover:bg-[#92400E] text-white border-[#F59E0B]/50',secondary:'bg-[#151B24] hover:bg-[#1C2430] text-[#F5F7FA] border-[#2A3445]',ghost:'bg-transparent hover:bg-[#151B24] text-[#AAB4C3] border-transparent'};return <button disabled={disabled} onClick={onClick} className={`h-9 px-3 border text-[11px] font-bold tracking-wide inline-flex items-center justify-center gap-2 transition disabled:opacity-40 disabled:cursor-not-allowed ${v[variant]} ${className}`}>{Icon&&<Icon size={14}/>} {children}</button>}\n===== ./src/components/common/DataTable.jsx =====
+export default function DataTable({columns,rows,onRowClick}){return <div className="overflow-auto"><table className="w-full text-left text-xs"><thead><tr className="border-b border-[#222B3A] text-[10px] uppercase tracking-[.1em] text-[#7E8A9A]">{columns.map(c=><th key={c.key} className="px-3 py-2.5 font-semibold whitespace-nowrap">{c.label}</th>)}</tr></thead><tbody>{rows.map((r,i)=><tr key={r.id||i} onClick={()=>onRowClick?.(r)} className="border-b border-[#222B3A]/70 hover:bg-[#1A212C] cursor-pointer">{columns.map(c=><td key={c.key} className="px-3 py-2.5 whitespace-nowrap">{c.render?c.render(r):r[c.key]}</td>)}</tr>)}</tbody></table></div>}\n===== ./src/components/common/EmptyState.jsx =====
+export default function EmptyState({title='No records',message='Nothing requires attention.'}){return <div className="p-8 text-center text-[#7E8A9A]"><div className="text-sm font-semibold text-[#AAB4C3]">{title}</div><p className="text-xs mt-1">{message}</p></div>}\n===== ./src/components/common/FilterBar.jsx =====
+export default function FilterBar({children}){return <div className="flex flex-wrap gap-2 items-center">{children}</div>}\n===== ./src/components/common/MetricCard.jsx =====
+export default function MetricCard({label,value,sub,icon:Icon,tone='default'}){return <div className="cad-panel p-4 min-w-0"><div className="flex items-start justify-between"><div><p className="text-[10px] uppercase tracking-[.12em] text-[#7E8A9A]">{label}</p><p className={`text-2xl font-bold mt-2 ${tone==='danger'?'text-[#EF4444]':tone==='success'?'text-[#22C55E]':tone==='info'?'text-[#38BDF8]':''}`}>{value}</p>{sub&&<p className="text-[11px] text-[#7E8A9A] mt-1">{sub}</p>}</div>{Icon&&<Icon size={18} className="text-[#7E8A9A]"/>}</div></div>}\n===== ./src/components/common/Modal.jsx =====
+export default function Modal({open,onClose,title,children}){if(!open)return null;return <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-6" onMouseDown={onClose}><div className="cad-panel w-full max-w-lg shadow-2xl" onMouseDown={e=>e.stopPropagation()}><div className="px-4 py-3 border-b border-[#222B3A] flex justify-between"><h3 className="text-xs font-bold tracking-[.12em]">{title}</h3><button onClick={onClose} className="text-[#7E8A9A] hover:text-white">×</button></div><div className="p-4">{children}</div></div></div>}\n===== ./src/components/common/Panel.jsx =====
+export default function Panel({children,className='',title,subtitle,actions}){return <section className={`cad-panel ${className}`}>{title&&<div className="px-4 py-3 border-b border-[#222B3A] flex items-center justify-between"><div><h2 className="text-xs font-bold tracking-[.12em] text-[#F5F7FA]">{title}</h2>{subtitle&&<p className="text-[11px] text-[#7E8A9A] mt-0.5">{subtitle}</p>}</div>{actions}</div>}{children}</section>}\n===== ./src/components/common/PriorityBadge.jsx =====
+const c={ECHO:'bg-[#7F1D1D] text-[#FCA5A5] border-[#EF4444]/40',DELTA:'bg-[#7C2D12] text-[#FDBA74] border-[#F97316]/40',CHARLIE:'bg-[#78350F] text-[#FCD34D] border-[#F59E0B]/40',BRAVO:'bg-[#14532D] text-[#86EFAC] border-[#22C55E]/40',ALPHA:'bg-[#172554] text-[#93C5FD] border-[#3B82F6]/40'}; export default function PriorityBadge({priority}){return <span className={`inline-flex min-w-[58px] justify-center px-2 py-1 border text-[10px] font-extrabold tracking-[.12em] ${c[priority]||''}`}>{priority}</span>}\n===== ./src/components/common/SearchInput.jsx =====
+import {Search} from 'lucide-react'; export default function SearchInput({value,onChange,placeholder='Search...'}){return <div className="relative"><Search size={14} className="absolute left-3 top-2.5 text-[#7E8A9A]"/><input value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder} className="cad-input pl-9"/></div>}\n===== ./src/components/common/SectionHeader.jsx =====
+export default function SectionHeader({title,subtitle,actions}){return <div className="flex items-center justify-between mb-3"><div><h2 className="text-xs font-bold tracking-[.12em]">{title}</h2>{subtitle&&<p className="text-[11px] text-[#7E8A9A] mt-1">{subtitle}</p>}</div>{actions}</div>}\n===== ./src/components/common/StatusBadge.jsx =====
+const colors={AVAILABLE:'text-[#22C55E] border-[#22C55E]/30 bg-[#22C55E]/10', 'EN ROUTE':'text-[#38BDF8] border-[#38BDF8]/30 bg-[#38BDF8]/10','ON SCENE':'text-[#F59E0B] border-[#F59E0B]/30 bg-[#F59E0B]/10',TRANSPORTING:'text-[#A78BFA] border-[#A78BFA]/30 bg-[#A78BFA]/10','AT HOSPITAL':'text-[#60A5FA] border-[#60A5FA]/30 bg-[#60A5FA]/10','OUT OF SERVICE':'text-[#EF4444] border-[#EF4444]/30 bg-[#EF4444]/10',Dispatched:'text-[#38BDF8] border-[#38BDF8]/30 bg-[#38BDF8]/10',Pending:'text-[#F59E0B] border-[#F59E0B]/30 bg-[#F59E0B]/10','IN SERVICE':'text-[#22C55E] border-[#22C55E]/30 bg-[#22C55E]/10',MAINTENANCE:'text-[#A78BFA] border-[#A78BFA]/30 bg-[#A78BFA]/10',WARNING:'text-[#F59E0B] border-[#F59E0B]/30 bg-[#F59E0B]/10',CRITICAL:'text-[#EF4444] border-[#EF4444]/30 bg-[#EF4444]/10'}}
+export default function StatusBadge({status}){return <span className={`inline-flex items-center gap-1.5 px-2 py-1 border text-[10px] font-bold tracking-wide ${colors[status]||'text-[#AAB4C3] border-[#222B3A]'}`}><span className="w-1.5 h-1.5 rounded-full bg-current"/>{status}</span>}\n===== ./src/components/common/Toast.jsx =====
+export default function Toast({items,onDismiss}){return <div className="fixed right-4 top-16 z-40 w-80 space-y-2">{items.map(n=><div key={n.id} className={`cad-panel p-3 border-l-2 ${n.type==='success'?'border-l-[#22C55E]':'border-l-[#F59E0B]'}`}><div className="flex justify-between gap-3"><p className="text-xs">{n.message}</p><button onClick={()=>onDismiss(n.id)} className="text-[#7E8A9A]">×</button></div></div>)}</div>}\n===== ./src/components/incidents/IncidentCard.jsx =====
+import PriorityBadge from '../common/PriorityBadge'; import StatusBadge from '../common/StatusBadge';
+export default function IncidentCard({incident,selected,onClick,compact=false}){return <button onClick={onClick} className={`w-full text-left p-3 border-b border-[#222B3A] hover:bg-[#1B222D] ${selected?'bg-[#1B2A3B] border-l-2 border-l-[#38BDF8]':''}`}><div className="flex items-center justify-between gap-2"><div className="flex items-center gap-2"><span className="font-bold text-xs">{incident.id}</span><span className="text-[10px] text-[#7E8A9A]">{incident.time}</span></div><PriorityBadge priority={incident.priority}/></div><p className={`text-xs text-[#AAB4C3] mt-2 ${compact?'truncate':''}`}>{incident.description}</p><p className="text-[11px] text-[#7E8A9A] mt-1 truncate">{incident.location}</p><div className="mt-2"><StatusBadge status={incident.status}/></div></button>}\n===== ./src/components/incidents/IncidentDetails.jsx =====
+import PriorityBadge from '../common/PriorityBadge'; import StatusBadge from '../common/StatusBadge'; export default function IncidentDetails({incident}){if(!incident)return <div className="p-6 text-[#7E8A9A] text-sm">Select an incident to inspect details.</div>;return <div className="p-4 space-y-3"><div className="flex justify-between"><div><div className="font-bold">{incident.id}</div><div className="text-xs text-[#7E8A9A]">{incident.time}</div></div><PriorityBadge priority={incident.priority}/></div><div><div className="cad-label">Complaint</div><p className="text-sm text-[#AAB4C3]">{incident.description}</p></div><div><div className="cad-label">Location</div><p className="text-sm">{incident.location}</p></div><div><div className="cad-label">Status</div><StatusBadge status={incident.status}/></div>{incident.assignedUnit&&<div><div className="cad-label">Assigned Unit</div><p className="font-semibold text-[#38BDF8]">{incident.assignedUnit}</p></div>}</div>}\n===== ./src/components/incidents/IncidentQueue.jsx =====
+import IncidentCard from './IncidentCard'; export default function IncidentQueue({incidents,selectedId,onSelect}){return <div className="cad-scroll h-full">{incidents.map(i=><IncidentCard key={i.id} incident={i} selected={i.id===selectedId} onClick={()=>onSelect(i)}/>)}</div>}\n===== ./src/components/layout/AppShell.jsx =====
+import TopHeader from './TopHeader'; import Sidebar from './Sidebar'; import Toast from '../common/Toast'; import StatusBar from './StatusBar'; import {useCad} from '../../context/CadContext';
+export default function AppShell({children,fullWidth=false}){const {notifications,dismissNotification}=useCad();return <div className="h-screen w-screen bg-[#0B0F14] text-[#F5F7FA] flex flex-col overflow-hidden"><TopHeader/><div className="flex min-h-0 flex-1">{!fullWidth&&<Sidebar/>}<main className="min-w-0 min-h-0 flex-1 overflow-hidden">{children}</main></div><StatusBar/><Toast items={notifications} onDismiss={dismissNotification}/></div>}\n===== ./src/components/layout/Sidebar.jsx =====
+import {NavLink} from 'react-router-dom'; import {Radio,MapPinned,Ambulance,Hospital,Shield,Settings,Truck,Users} from 'lucide-react'; import {useCad} from '../../context/CadContext';
+const links=[['call-taker','Call Taker',Radio],['dispatcher','Dispatcher',MapPinned],['paramedic','Paramedic',Ambulance],['hospital','Hospital',Hospital],['operations','Operations',Shield],['fleet','Fleet / Maintenance',Truck],['admin','Admin',Settings]];
+export default function Sidebar(){const {currentUser}=useCad();return <aside className="w-48 shrink-0 border-r border-[#222B3A] bg-[#0E131B] p-2 flex flex-col"><div className="px-3 py-2 text-[9px] uppercase tracking-[.15em] text-[#586578]">Workspaces</div>{links.map(([to,label,Icon])=><NavLink key={to} to={'/'+to} className={({isActive})=>`flex items-center gap-2 px-3 py-2.5 text-[11px] font-semibold ${isActive?'bg-[#1A2A3A] text-[#F5F7FA] border-l-2 border-[#38BDF8]':'text-[#7E8A9A] hover:text-[#F5F7FA]'}`}><Icon size={14}/>{label}</NavLink>)}<div className="mt-auto border-t border-[#222B3A] pt-3 px-3"><div className="text-[9px] text-[#586578] uppercase">Operator</div><div className="text-[11px] font-semibold mt-1">{currentUser?.name}</div></div></aside>}\n===== ./src/components/layout/StatusBar.jsx =====
+import {Clock3,RadioTower,Database} from 'lucide-react'
+export default function StatusBar(){return <div className="h-7 shrink-0 bg-[#0E131B] border-t border-[#222B3A] px-3 flex items-center justify-between text-[9px] text-[#7E8A9A]"><div className="flex items-center gap-4"><span className="flex items-center gap-1.5"><RadioTower size={11} className="text-[#22C55E]"/> CAD CORE CONNECTED</span><span className="flex items-center gap-1.5"><Database size={11} className="text-[#38BDF8]"/> DATA SYNC READY</span></div><span className="flex items-center gap-1.5"><Clock3 size={11}/> LIVE OPERATIONS CLOCK</span></div>}\n===== ./src/components/layout/TopHeader.jsx =====
+import {LogOut, Wifi, ShieldCheck} from 'lucide-react'; import {useCad} from '../../context/CadContext';
+export default function TopHeader(){const {currentUser,logout}=useCad(); return <header className="h-[60px] shrink-0 bg-[#121620] border-b border-[#222B3A] px-6 flex items-center justify-between"><div className="flex items-center gap-4"><div><div className="text-sm font-extrabold tracking-[.12em]">AMBULANCE CAD</div><div className="text-[10px] text-[#7E8A9A] font-bold tracking-[.16em]">{currentUser?.role?.toUpperCase()}</div></div><div className="h-7 w-px bg-[#222B3A]"/><span className="text-[10px] text-[#7E8A9A]">COMMAND NETWORK · CAD-CORE</span></div><div className="flex items-center gap-5"><div className="flex items-center gap-2 text-[10px] font-bold text-[#22C55E]"><span className="w-2 h-2 rounded-full bg-current animate-pulse"/>SYSTEM ONLINE</div><div className="text-[10px] text-[#7E8A9A]">{currentUser?.station}</div><button onClick={logout} className="text-[#7E8A9A] hover:text-white" title="Logout"><LogOut size={16}/></button></div></header>}\n===== ./src/components/map/MapPanel.jsx =====
+import {Map, Navigation, LocateFixed} from 'lucide-react';
+export default function MapPanel({units=[],incidents=[],className='',title='LIVE CAD MAP'}){return <div className={`relative overflow-hidden bg-[#0C141D] border border-[#222B3A] ${className}`}><div className="absolute inset-0 opacity-70" style={{backgroundImage:'linear-gradient(#193044 1px,transparent 1px),linear-gradient(90deg,#193044 1px,transparent 1px)',backgroundSize:'44px 44px'}}/><div className="absolute inset-0" style={{backgroundImage:'radial-gradient(circle at 30% 35%, rgba(56,189,248,.08), transparent 24%), radial-gradient(circle at 70% 60%, rgba(59,130,246,.08), transparent 26%)'}}/><div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-3 py-2 bg-[#121620]/90 border-b border-[#222B3A]"><span className="text-[10px] font-bold tracking-[.12em] flex items-center gap-2"><Map size={13} className="text-[#38BDF8]"/>{title}</span><span className="text-[10px] text-[#7E8A9A]">OSRM READY · POSTGIS READY</span></div>{incidents.slice(0,12).map((x,i)=><div key={x.id} className="absolute z-10" style={{left:`${15+(i*17)%70}%`,top:`${22+(i*23)%60}%`}} title={x.id}><div className={`w-3 h-3 rounded-full ring-4 ${x.priority==='ECHO'?'bg-[#EF4444] ring-[#EF4444]/20':x.priority==='DELTA'?'bg-[#F97316] ring-[#F97316]/20':'bg-[#F59E0B] ring-[#F59E0B]/20'}`}/><span className="absolute left-4 -top-1 text-[9px] text-[#AAB4C3] whitespace-nowrap">{x.id}</span></div>)}{units.slice(0,20).map((u,i)=><div key={u.id} className="absolute z-10" style={{left:`${8+(i*29)%84}%`,top:`${12+(i*37)%72}%`}} title={u.id}><div className={`w-2.5 h-2.5 rotate-45 ${u.status==='AVAILABLE'?'bg-[#22C55E]':u.status==='OUT OF SERVICE'?'bg-[#EF4444]':'bg-[#38BDF8]'}`}/></div>)}<div className="absolute bottom-3 left-3 right-3 flex justify-between items-end"><div className="cad-panel px-3 py-2 text-[9px] text-[#7E8A9A]"><div className="flex gap-3"><span>● INCIDENT</span><span>◆ UNIT</span><span>Grid: 44m</span></div></div><div className="flex gap-2"><button className="cad-panel p-2"><LocateFixed size={14}/></button><button className="cad-panel p-2"><Navigation size={14}/></button></div></div></div>}\n===== ./src/components/units/UnitCard.jsx =====
+import StatusBadge from '../common/StatusBadge'; export default function UnitCard({unit,selected,onClick}){return <button onClick={onClick} className={`w-full text-left p-3 border-b border-[#222B3A] ${selected?'bg-[#1B2A3B]':''}`}><div className="flex justify-between items-center"><span className="font-bold text-xs">{unit.id}</span><StatusBadge status={unit.status}/></div><div className="flex justify-between mt-2 text-[11px] text-[#7E8A9A]"><span>{unit.callSign}</span><span>{unit.capability}</span></div></button>}\n===== ./src/components/units/UnitList.jsx =====
+import UnitCard from './UnitCard'; export default function UnitList({units,selectedId,onSelect}){return <div className="cad-scroll">{units.map(u=><UnitCard key={u.id} unit={u} selected={u.id===selectedId} onClick={()=>onSelect?.(u)}/>)}</div>}\n===== ./src/components/units/UnitStatusBadge.jsx =====
+import StatusBadge from '../common/StatusBadge'; export default StatusBadge\n===== ./src/context/CadContext.jsx =====
+import { createContext, useContext, useMemo, useState } from 'react'
+import { initialIncidents } from '../data/mockIncidents'
+import { initialUnits } from '../data/mockUnits'
+import { hospitals } from '../data/mockHospitals'
+import { users } from '../data/mockUsers'
+import { maintenance } from '../data/mockMaintenance'
+import { initialMessages } from '../data/mockMessages'
+
+const CadContext = createContext(null)
+export function CadProvider({ children }) {
+  const [incidents, setIncidents] = useState(initialIncidents)
+  const [units, setUnits] = useState(initialUnits)
+  const [messages, setMessages] = useState(initialMessages)
+  const [notifications, setNotifications] = useState([])
+  const [currentUser, setCurrentUser] = useState(() => {
+    const role = localStorage.getItem('cad_role')
+    return users.find(u => u.roleKey === role) || users[0]
+  })
+
+  const loginAs = roleKey => {
+    const user = users.find(u => u.roleKey === roleKey) || users[0]
+    localStorage.setItem('cad_role', user.roleKey)
+    setCurrentUser(user)
+  }
+  const logout = () => { localStorage.removeItem('cad_role'); setCurrentUser(null) }
+
+  const addIncident = payload => {
+    const nextNumber = Math.max(...incidents.map(i => Number(i.id.replace('CAD-',''))), 2988) + 1
+    const incident = { ...payload, id:`CAD-${nextNumber}`, time:new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}), status:'Pending', notes:[] }
+    setIncidents(prev => [incident, ...prev])
+    setNotifications(prev => [{ id:Date.now(), type:'success', message:`${incident.id} submitted to dispatch queue.` }, ...prev].slice(0,4))
+    return incident
+  }
+  const appendNote = (incidentId, note) => {
+    if (!note.trim()) return
+    setIncidents(prev => prev.map(i => i.id === incidentId ? {...i, notes:[...(i.notes||[]), {text:note, at:new Date().toLocaleTimeString()}]} : i))
+    setNotifications(prev => [{id:Date.now(),type:'success',message:`Note appended to ${incidentId}.`},...prev].slice(0,4))
+  }
+  const assignUnit = (incidentId, unitId) => {
+    setIncidents(prev => prev.map(i => i.id === incidentId ? {...i, assignedUnit:unitId, status:'Dispatched'} : i))
+    setUnits(prev => prev.map(u => u.id === unitId ? {...u,status:'EN ROUTE',assignedIncident:incidentId} : u))
+    setNotifications(prev => [{id:Date.now(),type:'success',message:`${unitId} dispatched to ${incidentId}.`},...prev].slice(0,4))
+  }
+  const updateUnitStatus = (unitId,status) => setUnits(prev => prev.map(u => u.id===unitId?{...u,status}:u))
+  const sendMessage = (message, to='ALL') => {
+    if (!message.trim()) return
+    setMessages(prev => [{id:Date.now(),from:currentUser?.name||'CAD',to,text:message,time:new Date().toLocaleTimeString()},...prev])
+  }
+  const dismissNotification = id => setNotifications(prev => prev.filter(n=>n.id!==id))
+
+  const value = useMemo(() => ({ incidents,setIncidents,units,setUnits,hospitals,users,maintenance,messages,notifications,currentUser,loginAs,logout,addIncident,appendNote,assignUnit,updateUnitStatus,sendMessage,dismissNotification }), [incidents,units,messages,notifications,currentUser])
+  return <CadContext.Provider value={value}>{children}</CadContext.Provider>
+}
+export const useCad = () => useContext(CadContext)
+\n===== ./src/data/mockHospitals.js =====
+export const hospitals=[
+{id:'H-01',name:'Central General Hospital',zone:'Z-01',capacity:'AVAILABLE',beds:18,occupied:22,inbound:2},
+{id:'H-02',name:'Northside Medical Center',zone:'Z-03',capacity:'LIMITED',beds:7,occupied:29,inbound:1},
+{id:'H-03',name:'St. Anne Emergency Hospital',zone:'Z-05',capacity:'AVAILABLE',beds:14,occupied:16,inbound:1},
+{id:'H-04',name:'Riverside Medical Center',zone:'Z-07',capacity:'FULL',beds:0,occupied:35,inbound:0},
+{id:'H-05',name:'West County Trauma Center',zone:'Z-09',capacity:'LIMITED',beds:4,occupied:31,inbound:2},
+]
+\n===== ./src/data/mockIncidents.js =====
+export const initialIncidents = [
+{id:'CAD-2984',time:'10:42:11',priority:'ECHO',description:'Cardiac Arrest - unresponsive, agonal breathing',location:'1428 Elm St, Sector 4',status:'Dispatched',assignedUnit:'AMB-07'},
+{id:'CAD-2985',time:'10:44:03',priority:'DELTA',description:'Major Trauma - MVC with entrapment',location:'I-95 South, Mile Marker 102',status:'Pending'},
+{id:'CAD-2986',time:'10:45:15',priority:'CHARLIE',description:'Difficulty Breathing - history of asthma',location:'805 Pine Ave, Apt 3B',status:'Dispatched',assignedUnit:'AMB-12'},
+{id:'CAD-2987',time:'10:47:00',priority:'BRAVO',description:'Fall with possible hip fracture',location:'Sunnyvale Senior Living, Rm 14',status:'Pending'},
+{id:'CAD-2988',time:'10:48:22',priority:'ALPHA',description:'Minor laceration - bleeding controlled',location:'2204 Oak Rd',status:'Pending'},
+{id:'CAD-2989',time:'10:49:51',priority:'CHARLIE',description:'Chest pain with diaphoresis',location:'77 Market St, Floor 2',status:'Dispatched',assignedUnit:'AMB-03'},
+{id:'CAD-2990',time:'10:51:10',priority:'BRAVO',description:'Syncope, patient awake and oriented',location:'19 Cedar Lane',status:'Pending'},
+{id:'CAD-2991',time:'10:53:27',priority:'DELTA',description:'Severe bleeding following workplace injury',location:'West Industrial Park, Bay 8',status:'Dispatched',assignedUnit:'AMB-15'},
+{id:'CAD-2992',time:'10:55:44',priority:'ALPHA',description:'Minor burn to hand',location:'4 River Walk',status:'Pending'},
+{id:'CAD-2993',time:'10:57:08',priority:'CHARLIE',description:'Pediatric fever with altered behavior',location:'91 Willow St',status:'Pending'},
+{id:'CAD-2994',time:'10:58:42',priority:'ECHO',description:'Respiratory arrest, CPR in progress',location:'33 Kingfisher Dr',status:'Dispatched',assignedUnit:'AMB-01'},
+]
+\n===== ./src/data/mockMaintenance.js =====
+export const maintenance=[
+{id:'AMB-01',callSign:'MEDIC-01',mileage:84231,engineHours:4820,temperature:88,battery:92,oil:'GOOD',tires:'GOOD',faults:['P0420'],status:'IN SERVICE',serviceDate:'2026-09-02'},
+{id:'AMB-02',callSign:'MEDIC-02',mileage:91340,engineHours:5231,temperature:94,battery:76,oil:'DUE',tires:'GOOD',faults:['P0171','U0100'],status:'WARNING',serviceDate:'2026-08-24'},
+{id:'AMB-03',callSign:'MEDIC-03',mileage:67880,engineHours:3990,temperature:86,battery:97,oil:'GOOD',tires:'GOOD',faults:[],status:'IN SERVICE',serviceDate:'2026-10-10'},
+{id:'AMB-04',callSign:'MEDIC-04',mileage:112504,engineHours:6912,temperature:102,battery:61,oil:'CRITICAL',tires:'LOW',faults:['P0302','P0117','C0035'],status:'CRITICAL',serviceDate:'2026-08-20'},
+{id:'AMB-05',callSign:'MEDIC-05',mileage:50221,engineHours:3104,temperature:84,battery:95,oil:'GOOD',tires:'GOOD',faults:[],status:'MAINTENANCE',serviceDate:'2026-08-21'},
+{id:'AMB-06',callSign:'MEDIC-06',mileage:73110,engineHours:4410,temperature:89,battery:88,oil:'GOOD',tires:'FAIR',faults:['B0020'],status:'OUT OF SERVICE',serviceDate:'2026-08-26'},
+{id:'AMB-07',callSign:'MEDIC-07',mileage:62510,engineHours:3650,temperature:87,battery:91,oil:'GOOD',tires:'GOOD',faults:[],status:'IN SERVICE',serviceDate:'2026-09-14'},
+{id:'AMB-08',callSign:'MEDIC-08',mileage:100440,engineHours:6040,temperature:96,battery:70,oil:'DUE',tires:'FAIR',faults:['P0455'],status:'WARNING',serviceDate:'2026-08-28'},
+]
+\n===== ./src/data/mockMessages.js =====
+export const initialMessages=[
+{id:1,from:'DISP-02',to:'AMB-07',text:'Proceed priority response. Confirm when on scene.',time:'10:43:02'},
+{id:2,from:'AMB-12',to:'DISP-02',text:'Unit 12 en route, ETA 6 minutes.',time:'10:46:11'},
+{id:3,from:'DISP-02',to:'ALL',text:'Sector 4 traffic advisory: congestion near Elm St.',time:'10:47:36'},
+]
+\n===== ./src/data/mockUnits.js =====
+const statuses=['AVAILABLE','EN ROUTE','ON SCENE','TRANSPORTING','AT HOSPITAL','OUT OF SERVICE']
+const capabilities=['GENERAL','CRITICAL CARE','MATERNAL','NEONATAL']
+export const initialUnits=Array.from({length:20},(_,i)=>({
+ id:`AMB-${String(i+1).padStart(2,'0')}`,
+ callSign:`MEDIC-${String(i+1).padStart(2,'0')}`,
+ status:statuses[[0,0,1,2,3,4,0,5,0,1,0,2,3,0,1,4,0,5,0,2][i]],
+ homeZone:`Z-${String((i%10)).padStart(2,'0')}`,
+ capability:capabilities[[0,1,0,2,0,3,1,0,2,0,1,0,3,0,1,2,0,0,1,0][i]],
+ eta:[0,0,6,4,8,12,0,0,0,5,0,3,7,0,4,9,0,0,2,5][i],
+ distance:[0,0,2.4,1.8,4.1,6.7,0,0,0,2.1,0,1.3,3.8,0,2.7,5.4,0,0,0.9,2.9][i],
+ assignedIncident:null
+}))
+\n===== ./src/data/mockUsers.js =====
+export const users=[
+{id:'USR-001',name:'Margaret Reynolds',role:'Call Taker',roleKey:'call-taker',station:'CAD-01',status:'ACTIVE'},
+{id:'USR-002',name:'Daniel Brooks',role:'Dispatcher',roleKey:'dispatcher',station:'DISP-02',status:'ACTIVE'},
+{id:'USR-003',name:'Nadia Hassan',role:'Admin',roleKey:'admin',station:'HQ',status:'ACTIVE'},
+{id:'USR-004',name:'Alex Carter',role:'Paramedic',roleKey:'paramedic',station:'AMB-07',status:'ACTIVE'},
+{id:'USR-005',name:'Jordan Lee',role:'Operations Supervisor',roleKey:'operations',station:'OPS-01',status:'ACTIVE'},
+{id:'USR-006',name:'Dr. Sarah Patel',role:'Hospital',roleKey:'hospital',station:'H-01',status:'ACTIVE'},
+{id:'USR-007',name:'Mike Torres',role:'Fleet / Maintenance Staff',roleKey:'fleet',station:'FLEET-01',status:'ACTIVE'},
+]
+\n===== ./src/index.css =====
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  background: #0B0F14;
+  color: #F5F7FA;
+}
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; min-height: 100%; width: 100%; }
+body { background:#0B0F14; color:#F5F7FA; overflow:hidden; }
+button, input, textarea, select { font: inherit; }
+button { cursor:pointer; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background:#0B0F14; }
+::-webkit-scrollbar-thumb { background:#2A3445; border-radius:4px; }
+::-webkit-scrollbar-thumb:hover { background:#3A4659; }
+
+@layer components {
+  .cad-panel { @apply bg-[#151B24] border border-[#222B3A]; }
+  .cad-input { @apply w-full bg-[#0F141D] border border-[#222B3A] text-[#F5F7FA] px-3 py-2 text-sm outline-none focus:border-[#3B82F6]; }
+  .cad-label { @apply block text-[11px] uppercase tracking-[0.12em] font-semibold text-[#7E8A9A] mb-1.5; }
+  .cad-scroll { @apply overflow-auto; }
+}
+\n===== ./src/main.jsx =====
+import React from 'react'
+import ReactDOM from 'react-dom/client'
+import { BrowserRouter } from 'react-router-dom'
+import App from './App'
+import './index.css'
+ReactDOM.createRoot(document.getElementById('root')).render(
+  <React.StrictMode><BrowserRouter><App /></BrowserRouter></React.StrictMode>
+)
+\n===== ./src/pages/Login.jsx =====
+import {useNavigate} from 'react-router-dom'; import {ShieldCheck,Radio,ArrowRight} from 'lucide-react'; import {useCad} from '../context/CadContext'; import {users} from '../data/mockUsers';
+export default function Login(){const nav=useNavigate();const {loginAs}=useCad();const enter=role=>{loginAs(role);nav('/'+role)};return <div className="min-h-screen bg-[#0B0F14] flex items-center justify-center p-6"><div className="w-full max-w-5xl"><div className="text-center mb-8"><div className="inline-flex p-3 border border-[#222B3A] bg-[#121620] mb-4"><ShieldCheck size={28} className="text-[#38BDF8]"/></div><h1 className="text-2xl font-extrabold tracking-[.14em]">AMBULANCE CAD</h1><p className="text-xs text-[#7E8A9A] mt-2">Emergency Computer-Aided Dispatch · Demo Environment</p></div><div className="cad-panel p-5"><div className="flex items-center justify-between mb-4"><div><h2 className="text-xs font-bold tracking-[.12em]">SELECT DEMO ROLE</h2><p className="text-[11px] text-[#7E8A9A] mt-1">Role selection is demo authentication only; replace with the identity provider later.</p></div><span className="flex items-center gap-2 text-[10px] text-[#22C55E] font-bold"><Radio size={13}/> CORE ONLINE</span></div><div className="grid grid-cols-2 lg:grid-cols-4 gap-3">{users.map(u=><button key={u.id} onClick={()=>enter(u.roleKey)} className="text-left cad-panel p-4 hover:border-[#3B82F6] hover:bg-[#18202B]"><div className="text-[10px] text-[#7E8A9A] uppercase tracking-wider">{u.station}</div><div className="font-bold text-sm mt-2">{u.role}</div><div className="text-xs text-[#AAB4C3] mt-1">{u.name}</div><div className="mt-4 text-[10px] text-[#38BDF8] flex items-center gap-1">ENTER WORKSPACE <ArrowRight size={12}/></div></button>)}</div></div></div></div>}\n===== ./src/pages/admin/AdminDashboard.jsx =====
+import {useState} from 'react'; import {Users,ShieldCheck,Map,Truck,ClipboardList,FileText,Download,Plus,Search} from 'lucide-react'; import Panel from '../../components/common/Panel'; import ActionButton from '../../components/common/ActionButton'; import DataTable from '../../components/common/DataTable'; import SearchInput from '../../components/common/SearchInput'; import {useCad} from '../../context/CadContext';
+const modules=[['USER MANAGEMENT',Users],['ROLE & PERMISSIONS',ShieldCheck],['STATIONS',Map],['RESPONSE ZONES',Map],['VEHICLES',Truck],['TRIAGE PROTOCOLS',ClipboardList],['DISPATCH PARAMETERS',ShieldCheck],['AUDIT LOG',FileText],['REPORTS',FileText]];
+export default function AdminDashboard(){const {users}=useCad();const [q,setQ]=useState('');const filtered=users.filter(u=>`${u.name} ${u.role} ${u.station}`.toLowerCase().includes(q.toLowerCase()));const audit=[{id:1,time:'2026-08-20 10:42',actor:'Nadia Hassan',action:'UPDATE',entity:'USR-004',prev:'ACTIVE',next:'ACTIVE'},{id:2,time:'2026-08-20 10:37',actor:'Nadia Hassan',action:'CREATE',entity:'USR-007',prev:'—',next:'FLEET'}];return <div className="h-full overflow-auto p-5"><div className="grid grid-cols-3 gap-3 mb-4">{modules.map(([m,I])=><div key={m} className="cad-panel p-3 flex items-center gap-3 hover:border-[#3B82F6] cursor-pointer"><I size={16} className="text-[#38BDF8]"/><div><div className="text-[10px] font-bold tracking-[.1em]">{m}</div><div className="text-[9px] text-[#7E8A9A] mt-1">Configure operational master data</div></div></div>)}</div><div className="grid grid-cols-[minmax(0,1fr)_420px] gap-4"><Panel title="USER MANAGEMENT" subtitle="CALL TAKER · DISPATCH · PARAMEDIC · HOSPITAL · OPERATIONS · FLEET · ADMIN" actions={<ActionButton icon={Plus} variant="primary">CREATE USER</ActionButton>}><div className="p-3"><div className="mb-3 max-w-sm"><SearchInput value={q} onChange={setQ} placeholder="Search users..."/></div><DataTable rows={filtered} columns={[{key:'id',label:'ID'},{key:'name',label:'User'},{key:'role',label:'Role'},{key:'station',label:'Station'},{key:'status',label:'Status',render:r=><span className="text-[#22C55E]">{r.status}</span>},{key:'actions',label:'Actions',render:()=> <span className="text-[#38BDF8]">EDIT · DEACTIVATE</span>}]}/></div></Panel><div className="space-y-4"><Panel title="AUDIT LOG"><DataTable rows={audit} columns={[{key:'time',label:'Timestamp'},{key:'actor',label:'Actor'},{key:'action',label:'Action'},{key:'entity',label:'Entity'},{key:'prev',label:'Previous'},{key:'next',label:'New'}]}/></Panel><Panel title="REPORTS"><div className="p-4 grid grid-cols-3 gap-2">{['Response Time','Incident Volume','Unit Utilization'].map(x=><div key={x} className="cad-panel p-3"><FileText size={14} className="text-[#38BDF8]"/><div className="text-[10px] font-bold mt-2">{x}</div><div className="text-[9px] text-[#7E8A9A] mt-1">Generate report</div></div>)}</div><div className="p-4 pt-0 flex gap-2"><ActionButton icon={Download}>EXPORT CSV</ActionButton><ActionButton icon={Download}>EXPORT PDF</ActionButton></div></Panel></div></div></div>}\n===== ./src/pages/call-taker/CallTaker.jsx =====
+import {useMemo,useState} from 'react'; import {MapPinned,Phone,User,AlertTriangle,FilePlus2,Send,RotateCcw} from 'lucide-react';
+import Panel from '../../components/common/Panel'; import PriorityBadge from '../../components/common/PriorityBadge'; import ActionButton from '../../components/common/ActionButton'; import IncidentCard from '../../components/incidents/IncidentCard'; import {useCad} from '../../context/CadContext'; import MapPanel from '../../components/map/MapPanel';
+const priorities=[['ECHO','Cardiac/Respiratory'],['DELTA','Life Threatening'],['CHARLIE','Serious / Urgent'],['BRAVO','Non-Life Threat'],['ALPHA','Minor / Basic']];
+export default function CallTaker(){const {incidents,addIncident,appendNote}=useCad();const [caller,setCaller]=useState('Margaret Reynolds'),[phone,setPhone]=useState('(555) 392-0192'),[location,setLocation]=useState('1428 Elm St, Sector 4'),[narrative,setNarrative]=useState('Caller reports elderly neighbor fell in garden. Conscious but unable to stand due to sharp lower back pain. Patient is breathing normally but shivering slightly. No head trauma reported.'),[priority,setPriority]=useState('BRAVO'),[noteIncident,setNoteIncident]=useState('CAD-2985'),[note,setNote]=useState('');const [submitted,setSubmitted]=useState(false);const active=useMemo(()=>incidents.slice(0,5),[incidents]);
+const submit=()=>{addIncident({caller,callback:phone,location,description:narrative,priority});setSubmitted(true);setTimeout(()=>setSubmitted(false),2500)};const append=()=>{appendNote(noteIncident,note);setNote('')};
+return <div className="h-full p-5 overflow-hidden"><div className="h-full grid grid-cols-[minmax(0,3fr)_minmax(360px,2fr)] gap-4 min-h-0">
+<div className="min-h-0 grid grid-rows-[minmax(0,1fr)_auto] gap-4"><Panel title="NEW INCIDENT INTAKE" subtitle="Incident ID auto-generated upon submission" className="min-h-0 overflow-auto"><div className="p-4 space-y-4">
+<div className="grid grid-cols-2 gap-3"><label><span className="cad-label">Caller Name</span><div className="relative"><User size={14} className="absolute left-3 top-2.5 text-[#7E8A9A]"/><input className="cad-input pl-9" value={caller} onChange={e=>setCaller(e.target.value)}/></div></label><label><span className="cad-label">Callback Number</span><div className="relative"><Phone size={14} className="absolute left-3 top-2.5 text-[#7E8A9A]"/><input className="cad-input pl-9" value={phone} onChange={e=>setPhone(e.target.value)}/></div></label></div>
+<label><span className="cad-label">Incident Location</span><div className="relative"><MapPinned size={14} className="absolute left-3 top-2.5 text-[#7E8A9A]"/><input className="cad-input pl-9" value={location} onChange={e=>setLocation(e.target.value)}/></div></label>
+<div className="h-40"><MapPanel title="INCIDENT SITE · MAP PREVIEW" incidents={active}/></div>
+<label><span className="cad-label">Chief Complaint / Narrative</span><textarea className="cad-input min-h-[118px] resize-y leading-relaxed" value={narrative} onChange={e=>setNarrative(e.target.value)}/></label>
+<div><div className="cad-label">Triage Priority Level</div><div className="grid grid-cols-5 gap-2">{priorities.map(([p,d])=><button key={p} onClick={()=>setPriority(p)} className={`min-h-[62px] border px-2 py-2 text-left ${priority===p?'ring-1 ring-[#F5F7FA] bg-[#1C2633]':''}`}><div className="flex justify-between"><PriorityBadge priority={p}/>{priority===p&&<span className="text-[9px] text-[#22C55E]">SELECTED</span>}</div><div className="text-[9px] text-[#7E8A9A] mt-2 leading-tight">{d}</div></button>)}</div></div>
+</div></Panel>
+<div className="flex justify-end gap-2">{submitted&&<div className="mr-auto flex items-center gap-2 text-[11px] text-[#22C55E]"><span className="w-2 h-2 rounded-full bg-current"/>Incident submitted to dispatch.</div>}<ActionButton icon={RotateCcw} onClick={()=>{setCaller('');setPhone('');setLocation('');setNarrative('');setPriority('BRAVO')}}>CANCEL / CLEAR</ActionButton><ActionButton icon={Send} variant="primary" className="px-5" onClick={submit}>SUBMIT TO DISPATCH · READY</ActionButton></div></div>
+<div className="min-h-0 grid grid-rows-[auto_minmax(0,1fr)_auto] gap-4">
+<Panel className="border-[#EF4444]/50 bg-[#28151A]"><div className="p-4 flex gap-3"><AlertTriangle className="text-[#EF4444] shrink-0" size={20}/><div><div className="text-[10px] font-extrabold tracking-[.12em] text-[#FCA5A5]">POTENTIAL DUPLICATE</div><p className="text-xs text-[#AAB4C3] mt-1">Potential Duplicate: Active incident at Elm St Sector 4 (CAD-2984)</p></div></div></Panel>
+<Panel title={`ACTIVE INCIDENTS (${active.length})`} subtitle="LIVE AUTO-REFRESH"><div className="h-full cad-scroll">{active.map(i=><IncidentCard key={i.id} incident={i}/>)}</div></Panel>
+<Panel title="ADD SUPPLEMENTARY NOTES"><div className="p-4 space-y-3"><label><span className="cad-label">Incident</span><select className="cad-input" value={noteIncident} onChange={e=>setNoteIncident(e.target.value)}>{incidents.slice(0,10).map(i=><option key={i.id}>{i.id}</option>)}</select></label><textarea className="cad-input h-20 resize-none" placeholder="Append details (e.g. access codes, hazard warnings, patient updates)" value={note} onChange={e=>setNote(e.target.value)}/><ActionButton icon={FilePlus2} onClick={append}>APPEND TO ACTIVE LOG</ActionButton></div></Panel>
+</div></div></div>}\n===== ./src/pages/dispatcher/Dispatcher.jsx =====
+import {useMemo,useState} from 'react'; import {Send,RefreshCw,Radio,UserPlus,ArrowUp,MessageSquare} from 'lucide-react'; import Panel from '../../components/common/Panel'; import ActionButton from '../../components/common/ActionButton'; import IncidentQueue from '../../components/incidents/IncidentQueue'; import IncidentDetails from '../../components/incidents/IncidentDetails'; import UnitList from '../../components/units/UnitList'; import MapPanel from '../../components/map/MapPanel'; import {useCad} from '../../context/CadContext';
+export default function Dispatcher(){const {incidents,units,assignUnit,sendMessage,messages}=useCad();const [selected,setSelected]=useState(incidents[0]),[unit,setUnit]=useState(null),[text,setText]=useState('');const available=units.filter(u=>u.status==='AVAILABLE');const recommended=available[0];const sorted=useMemo(()=>[...incidents].sort((a,b)=>({ECHO:0,DELTA:1,CHARLIE:2,BRAVO:3,ALPHA:4}[a.priority]-({ECHO:0,DELTA:1,CHARLIE:2,BRAVO:3,ALPHA:4}[b.priority])||a.time.localeCompare(b.time)),[incidents]);const chosen=unit||recommended;
+return <div className="h-full p-4 grid grid-cols-[300px_minmax(0,1fr)_330px] grid-rows-[minmax(0,1fr)_230px] gap-4"><Panel title="INCIDENT QUEUE" subtitle={`${sorted.length} ACTIVE · PRIORITY ORDER`} className="min-h-0"><IncidentQueue incidents={sorted} selectedId={selected?.id} onSelect={setSelected}/></Panel><MapPanel className="min-h-0" incidents={incidents} units={units}/><Panel title="UNIT RECOMMENDATION" subtitle="NEAREST AVAILABLE" className="min-h-0 overflow-auto"><div className="p-4 space-y-4"><IncidentDetails incident={selected}/><div className="border border-[#222B3A] p-3"><div className="cad-label">Recommended Unit</div>{chosen?<><div className="flex justify-between"><span className="font-bold">{chosen.id}</span><span className="text-[#38BDF8] text-xs">{chosen.eta} min ETA</span></div><div className="text-[11px] text-[#7E8A9A] mt-1">{chosen.distance} mi · {chosen.capability} · {chosen.status}</div></>:<div className="text-xs text-[#7E8A9A]">No available unit.</div>}</div><div><div className="cad-label">Manual Unit Override</div><select className="cad-input" value={unit?.id||''} onChange={e=>setUnit(units.find(u=>u.id===e.target.value)||null)}><option value="">Use recommendation</option>{available.map(u=><option key={u.id} value={u.id}>{u.id} · {u.eta} min · {u.capability}</option>)}</select></div><div className="grid grid-cols-2 gap-2"><ActionButton variant="primary" icon={UserPlus} disabled={!selected||!chosen} onClick={()=>assignUnit(selected.id,chosen.id)}>ASSIGN UNIT</ActionButton><ActionButton icon={RefreshCw}>REASSIGN</ActionButton><ActionButton icon={Radio}>REQUEST SECOND UNIT</ActionButton><ActionButton variant="warning" icon={ArrowUp}>UPGRADE PRIORITY</ActionButton></div></div></Panel>
+<Panel title="DISPATCH DETAILS" subtitle={selected?`${selected.id} · ${selected.location}`:'Select an incident'} className="min-h-0"><div className="p-4 flex gap-4 h-full"><div className="flex-1"><div className="text-[10px] text-[#7E8A9A] uppercase tracking-wider">Live ETA</div><div className="text-3xl font-bold text-[#38BDF8] mt-1">{chosen?.eta??'—'} <span className="text-xs font-normal text-[#7E8A9A]">MIN</span></div><p className="text-xs text-[#AAB4C3] mt-2">Road distance: {chosen?.distance??'—'} mi · capability: {chosen?.capability??'—'}</p></div><div className="w-[45%] border border-[#222B3A] p-3 flex flex-col"><div className="flex items-center gap-2 text-[10px] font-bold"><MessageSquare size={14} className="text-[#38BDF8]"/> CREW MESSAGING</div><div className="flex-1 cad-scroll mt-2 space-y-1">{messages.slice(0,3).map(m=><div key={m.id} className="text-[10px] text-[#AAB4C3]"><span className="text-[#7E8A9A]">{m.time}</span> · <b>{m.from}</b>: {m.text}</div>)}</div><div className="flex gap-2"><input className="cad-input" placeholder="Custom message" value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){sendMessage(text,chosen?.id||'ALL');setText('')}}}/><ActionButton icon={Send} onClick={()=>{sendMessage(text,chosen?.id||'ALL');setText('')}}>SEND</ActionButton></div></div></div></Panel>
+<Panel title="UNIT STATUS" className="min-h-0"><UnitList units={units} selectedId={chosen?.id}/></Panel></div>}\n===== ./src/pages/fleet/FleetMaintenance.jsx =====
+import {useState} from 'react'; import {Thermometer,Car,AlertTriangle,Wrench,Battery,CalendarDays} from 'lucide-react'; import Panel from '../../components/common/Panel'; import StatusBadge from '../../components/common/StatusBadge'; import ActionButton from '../../components/common/ActionButton'; import DataTable from '../../components/common/DataTable'; import {useCad} from '../../context/CadContext';
+export default function FleetMaintenance(){const {maintenance}=useCad();const [selected,setSelected]=useState(maintenance[0]);return <div className="h-full overflow-auto p-5"><div className="grid grid-cols-5 gap-3 mb-4"><Panel><div className="p-4"><div className="flex justify-between"><span className="text-[10px] text-[#7E8A9A]">FLEET HEALTH</span><Car size={16} className="text-[#22C55E]"/></div><div className="text-2xl font-bold mt-2">{maintenance.filter(m=>m.status==='IN SERVICE').length}/{maintenance.length}</div></div></Panel><Panel><div className="p-4"><div className="text-[10px] text-[#7E8A9A]">FAULT ALERTS</div><div className="text-2xl font-bold text-[#F59E0B] mt-2">{maintenance.filter(m=>m.faults.length).length}</div></div></Panel><Panel><div className="p-4"><div className="text-[10px] text-[#7E8A9A]">CRITICAL</div><div className="text-2xl font-bold text-[#EF4444] mt-2">{maintenance.filter(m=>m.status==='CRITICAL').length}</div></div></Panel><Panel><div className="p-4"><div className="text-[10px] text-[#7E8A9A]">MAINTENANCE DUE</div><div className="text-2xl font-bold mt-2">{maintenance.filter(m=>m.oil==='DUE'||m.status==='MAINTENANCE').length}</div></div></Panel><Panel><div className="p-4"><div className="text-[10px] text-[#7E8A9A]">CAN BUS</div><div className="text-2xl font-bold text-[#22C55E] mt-2">ONLINE</div></div></Panel></div><div className="grid grid-cols-[minmax(0,1fr)_370px] gap-4"><Panel title="VEHICLE STATUS" subtitle="CAN BUS DIAGNOSTICS · LIVE TELEMETRY"><DataTable rows={maintenance} onRowClick={setSelected} columns={[{key:'id',label:'Unit'},{key:'callSign',label:'Call Sign'},{key:'mileage',label:'Mileage'},{key:'engineHours',label:'Engine Hrs'},{key:'temperature',label:'Temp °C',render:r=><span className={r.temperature>100?'text-[#EF4444]':''}>{r.temperature}</span>},{key:'battery',label:'Battery',render:r=><span className={r.battery<70?'text-[#F59E0B]':''}>{r.battery}%</span>},{key:'faults',label:'Faults',render:r=>r.faults.length?r.faults.join(', '):'—'},{key:'status',label:'Status',render:r=><StatusBadge status={r.status}/>} ]}/></Panel><div className="space-y-4"><Panel title="FAULT ALERTS"><div className="p-3 space-y-2">{maintenance.filter(m=>m.faults.length).map(m=><div key={m.id} className="p-3 border border-[#222B3A]"><div className="flex justify-between"><b className="text-xs">{m.id}</b><AlertTriangle size={14} className={m.status==='CRITICAL'?'text-[#EF4444]':'text-[#F59E0B]'}/></div><div className="text-[10px] text-[#AAB4C3] mt-1">{m.faults.join(' · ')}</div></div>)}</div></Panel><Panel title={`MAINTENANCE · ${selected?.id||'—'}`}><div className="p-3 space-y-2 text-xs"><div className="grid grid-cols-2 gap-2"><div className="cad-panel p-2"><Thermometer size={13} className="text-[#F59E0B]"/><div className="mt-1">{selected?.temperature}°C</div></div><div className="cad-panel p-2"><Battery size={13} className="text-[#22C55E]"/><div className="mt-1">{selected?.battery}%</div></div></div><div className="text-[#7E8A9A] flex items-center gap-2"><CalendarDays size={13}/> Service: {selected?.serviceDate}</div><div className="flex gap-2 pt-2"><ActionButton variant="danger" icon={Wrench}>SET OUT OF SERVICE</ActionButton><ActionButton icon={Car}>RETURN TO SERVICE</ActionButton></div><ActionButton className="w-full mt-1">SCHEDULE MAINTENANCE</ActionButton></div></Panel></div></div></div>}\n===== ./src/pages/hospital/Hospital.jsx =====
+import {useState} from 'react'; import {Hospital as HospitalIcon,ShieldAlert,Check,Power,RefreshCw} from 'lucide-react'; import Panel from '../../components/common/Panel'; import StatusBadge from '../../components/common/StatusBadge'; import PriorityBadge from '../../components/common/PriorityBadge'; import ActionButton from '../../components/common/ActionButton'; import MetricCard from '../../components/common/MetricCard'; import {useCad} from '../../context/CadContext';
+export default function Hospital(){const {incidents,hospitals}=useCad();const [diversion,setDiversion]=useState(false);const inbound=incidents.filter(i=>i.assignedUnit).slice(0,5);return <div className="h-full overflow-auto p-5"><div className="grid grid-cols-4 gap-3 mb-4"><MetricCard label="SYSTEM STATUS" value="ONLINE" sub="CAD link healthy" icon={HospitalIcon} tone="success"/><MetricCard label="INBOUND AMBULANCES" value={inbound.length} sub="Live pre-arrival feed" icon={RefreshCw} tone="info"/><MetricCard label="CAPACITY" value="LIMITED" sub="7 monitored beds" icon={ShieldAlert} tone="warning"/><MetricCard label="DIVERSION" value={diversion?'ON':'OFF'} sub="Receiving status" icon={Power} tone={diversion?'danger':'success'}/></div><div className="grid grid-cols-[minmax(0,1fr)_360px] gap-4"><Panel title="INBOUND AMBULANCES" subtitle="PRE-ARRIVAL NOTIFICATIONS"><div className="p-3 space-y-2">{inbound.map(i=><div key={i.id} className="border border-[#222B3A] p-3 flex items-center justify-between gap-4"><div><div className="flex items-center gap-2 font-bold text-xs">{i.id}<PriorityBadge priority={i.priority}/></div><div className="text-[11px] text-[#AAB4C3] mt-2">{i.description}</div><div className="text-[10px] text-[#7E8A9A] mt-1">{i.location}</div></div><div className="text-right"><div className="text-[#38BDF8] font-bold text-sm">6 MIN</div><div className="text-[10px] text-[#7E8A9A]">{i.assignedUnit||'PENDING'}</div><ActionButton className="mt-2" icon={Check}>ACKNOWLEDGE</ActionButton></div></div>)}</div></Panel><div className="space-y-4"><Panel title="CAPACITY STATUS"><div className="p-3 space-y-2">{hospitals.map(h=><div key={h.id} className="border-b border-[#222B3A] py-2 flex justify-between"><div><div className="text-xs font-bold">{h.id} · {h.name}</div><div className="text-[10px] text-[#7E8A9A]">{h.occupied} occupied · {h.beds} monitored beds</div></div><StatusBadge status={h.capacity}/></div>)}</div></Panel><Panel title="DIVERSION STATUS"><div className="p-4"><p className="text-xs text-[#AAB4C3]">Control whether this facility accepts new inbound transports.</p><ActionButton className="mt-4 w-full h-11" variant={diversion?'danger':'primary'} icon={Power} onClick={()=>setDiversion(v=>!v)}>{diversion?'DIVERSION ON':'DIVERSION OFF'}</ActionButton><ActionButton className="mt-2 w-full" icon={RefreshCw}>UPDATE CAPACITY</ActionButton></div></Panel></div></div></div>}\n===== ./src/pages/operations/OperationsSupervisor.jsx =====
+import {useState} from 'react'; import {Ambulance,Activity,Clock,MapPinned,Users,AlertTriangle,Shuffle} from 'lucide-react'; import MetricCard from '../../components/common/MetricCard'; import Panel from '../../components/common/Panel'; import MapPanel from '../../components/map/MapPanel'; import ActionButton from '../../components/common/ActionButton'; import UnitList from '../../components/units/UnitList'; import {useCad} from '../../context/CadContext';
+export default function OperationsSupervisor(){const {units,incidents}=useCad();const [selected,setSelected]=useState(units[0]);const [target,setTarget]=useState('Z-04');const available=units.filter(u=>u.status==='AVAILABLE').length;return <div className="h-full overflow-auto p-5"><div className="grid grid-cols-6 gap-3 mb-4"><MetricCard label="AVAILABLE UNITS" value={available} icon={Ambulance} tone="success"/><MetricCard label="ACTIVE INCIDENTS" value={incidents.length} icon={Activity} tone="danger"/><MetricCard label="UNITS EN ROUTE" value={units.filter(u=>u.status==='EN ROUTE').length} icon={Clock} tone="info"/><MetricCard label="UNITS ON SCENE" value={units.filter(u=>u.status==='ON SCENE').length} icon={MapPinned}/><MetricCard label="TRANSPORTING" value={units.filter(u=>u.status==='TRANSPORTING').length} icon={Ambulance}/><MetricCard label="AVG RESPONSE" value="7.4m" sub="last 24 hours" icon={Clock} tone="info"/></div><div className="grid grid-cols-[minmax(0,1fr)_340px] gap-4"><div className="space-y-4"><MapPanel className="h-[440px]" incidents={incidents} units={units} title="FLEET-WIDE LIVE MAP"/><div className="grid grid-cols-3 gap-4"><Panel title="ZONE COVERAGE"><div className="p-3 space-y-2">{Array.from({length:10},(_,i)=>{const z=`Z-${String(i).padStart(2,'0')}`;const count=units.filter(u=>u.homeZone===z&&u.status==='AVAILABLE').length;return <div key={z} className="flex justify-between text-xs border-b border-[#222B3A] pb-2"><span>{z}</span><span className={count<1?'text-[#EF4444]':'text-[#22C55E]'}>{count} available</span></div>})}</div></Panel><Panel title="INCIDENT VOLUME"><div className="p-4"><div className="h-32 flex items-end gap-1">{[4,7,5,9,12,8,14,10,13,11,16,12].map((v,i)=><div key={i} className="flex-1 bg-[#2563EB]/60 border-t border-[#38BDF8]" style={{height:`${v*6}px`}}/>)}</div><div className="text-[10px] text-[#7E8A9A] mt-2">12-hour rolling volume</div></div></Panel><Panel title="STAFFING OVERVIEW"><div className="p-4 flex gap-4"><Users className="text-[#38BDF8]"/><div><div className="text-xl font-bold">36 / 40</div><div className="text-[10px] text-[#7E8A9A]">crew currently rostered</div></div></div></Panel></div></div><div className="space-y-4"><Panel title="REAL-TIME ALERTS"><div className="p-3 space-y-2"><div className="border-l-2 border-[#EF4444] bg-[#28151A] p-3"><div className="flex gap-2 text-xs font-bold"><AlertTriangle size={14} className="text-[#EF4444]"/> Z-07 COVERAGE LOW</div><p className="text-[10px] text-[#AAB4C3] mt-1">No available units in zone.</p></div><div className="border-l-2 border-[#F59E0B] bg-[#251B0D] p-3 text-xs">H-04 reporting full capacity.</div></div></Panel><Panel title="REASSIGN UNIT"><div className="p-3 space-y-3"><select className="cad-input" value={selected?.id} onChange={e=>setSelected(units.find(u=>u.id===e.target.value))}>{units.map(u=><option key={u.id}>{u.id}</option>)}</select><select className="cad-input" value={target} onChange={e=>setTarget(e.target.value)}>{Array.from({length:10},(_,i)=><option key={i}>Z-{String(i).padStart(2,'0')}</option>)}</select><ActionButton variant="primary" className="w-full" icon={Shuffle}>REASSIGN UNIT</ActionButton></div></Panel><Panel title="UNIT ROSTER"><div className="h-80"><UnitList units={units} selectedId={selected?.id} onSelect={setSelected}/></div></Panel></div></div></div>}\n===== ./src/pages/paramedic/Paramedic.jsx =====
+import {useState} from 'react'; import {Navigation,Phone,Wifi,WifiOff,CheckCircle2,MapPinned} from 'lucide-react'; import PriorityBadge from '../../components/common/PriorityBadge'; import ActionButton from '../../components/common/ActionButton'; import Panel from '../../components/common/Panel'; import MapPanel from '../../components/map/MapPanel'; import {useCad} from '../../context/CadContext';
+const lifecycle=['EN ROUTE','ON SCENE','TRANSPORTING','AT HOSPITAL','AVAILABLE'];
+export default function Paramedic(){const {incidents,units,updateUnitStatus}=useCad();const unit=units.find(u=>u.id==='AMB-07')||units[0];const incident=incidents.find(i=>i.id==='CAD-2984')||incidents[0];const [state,setState]=useState(unit.status==='AVAILABLE'?'EN ROUTE':unit.status);const [offline,setOffline]=useState(false);const [hospital,setHospital]=useState('H-01');const [outcome,setOutcome]=useState('');return <div className="h-full overflow-auto p-4 bg-[#090D12]"><div className="max-w-xl mx-auto space-y-3"><div className="flex items-center justify-between"><div><div className="text-[10px] text-[#7E8A9A] uppercase tracking-[.14em]">CURRENT DISPATCH · {unit.id}</div><div className="text-lg font-bold mt-1">{incident.id}</div></div><button onClick={()=>setOffline(v=>!v)} className={`px-3 py-2 border text-[10px] font-bold flex items-center gap-2 ${offline?'text-[#F59E0B] border-[#F59E0B]/40':'text-[#22C55E] border-[#22C55E]/40'}`}>{offline?<WifiOff size={14}/>:<Wifi size={14}/>} {offline?'CONNECTION LOST':'CONNECTED'}</button></div><Panel><div className="p-4"><div className="flex justify-between items-center"><PriorityBadge priority={incident.priority}/><span className="text-xs text-[#38BDF8]">ETA 6 MIN · 2.4 MI</span></div><div className="text-sm font-semibold mt-4">{incident.description}</div><div className="flex items-center gap-2 text-xs text-[#AAB4C3] mt-2"><MapPinned size={14} className="text-[#38BDF8]"/>{incident.location}</div></div></Panel><MapPanel className="h-48" title="NAVIGATION · MOCK ROUTE"/><Panel title="INCIDENT LIFECYCLE"><div className="p-3 grid grid-cols-2 gap-2">{lifecycle.map(s=><button key={s} onClick={()=>{setState(s);updateUnitStatus(unit.id,s)}} className={`min-h-14 border text-[11px] font-extrabold tracking-wide ${state===s?'bg-[#1B2A3A] border-[#38BDF8] text-[#F5F7FA]':'bg-[#111720] border-[#222B3A] text-[#7E8A9A]'}`}>{s}</button>)}</div></Panel><Panel title="DESTINATION / HOSPITAL"><div className="p-3 space-y-3"><div className="grid grid-cols-2 gap-2 text-xs"><div className="bg-[#0F141D] border border-[#222B3A] p-3"><span className="text-[#7E8A9A] block">DESTINATION</span><b className="block mt-1">{hospital}</b></div><div className="bg-[#0F141D] border border-[#222B3A] p-3"><span className="text-[#7E8A9A] block">ARRIVAL</span><b className="block mt-1">10:58</b></div></div><select className="cad-input" value={hospital} onChange={e=>setHospital(e.target.value)}><option>H-01</option><option>H-02</option><option>H-03</option><option>H-05</option></select></div></Panel><Panel title="INCIDENT CLOSEOUT"><div className="p-3 space-y-3"><textarea className="cad-input h-24" placeholder="Outcome Summary / Patient Handoff" value={outcome} onChange={e=>setOutcome(e.target.value)}/><ActionButton variant="primary" className="w-full h-12" icon={CheckCircle2}>CLOSE INCIDENT</ActionButton></div></Panel></div></div>}\n===== ./src/routes/AppRoutes.jsx =====
+import {Routes,Route,Navigate} from 'react-router-dom'; import {useCad} from '../context/CadContext'; import AppShell from '../components/layout/AppShell';
+import Login from '../pages/Login'; import CallTaker from '../pages/call-taker/CallTaker'; import Dispatcher from '../pages/dispatcher/Dispatcher'; import Paramedic from '../pages/paramedic/Paramedic'; import Hospital from '../pages/hospital/Hospital'; import OperationsSupervisor from '../pages/operations/OperationsSupervisor'; import FleetMaintenance from '../pages/fleet/FleetMaintenance'; import AdminDashboard from '../pages/admin/AdminDashboard';
+const pages={ 'call-taker':CallTaker,dispatcher:Dispatcher,paramedic:Paramedic,hospital:Hospital,operations:OperationsSupervisor,fleet:FleetMaintenance,admin:AdminDashboard };
+function Guard({role,children}){const {currentUser}=useCad(); if(!currentUser)return <Navigate to="/login" replace/>; if(currentUser.roleKey!==role)return <Navigate to={'/'+currentUser.roleKey} replace/>; return children}
+export default function AppRoutes(){return <Routes><Route path="/login" element={<Login/>}/>{Object.entries(pages).map(([role,Page])=><Route key={role} path={'/'+role} element={<Guard role={role}><AppShell><Page/></AppShell></Guard>}/>)}<Route path="*" element={<Navigate to="/login" replace/>}/></Routes>}\n===== ./tailwind.config.js =====
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: ['./index.html', './src/**/*.{js,jsx}'],
+  theme: { extend: { fontFamily: { sans: ['Inter','ui-sans-serif','system-ui','sans-serif'] } } },
+  plugins: [],
+}
+\n===== ./vite.config.js =====
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+export default defineConfig({ plugins: [react()] })

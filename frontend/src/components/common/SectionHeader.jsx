@@ -1,0 +1,1 @@
+export default function SectionHeader({title,subtitle,actions}){return <div className="flex items-center justify-between mb-3"><div><h2 className="text-xs font-bold tracking-[.12em]">{title}</h2>{subtitle&&<p className="text-[11px] text-[#7E8A9A] mt-1">{subtitle}</p>}</div>{actions}</div>}
