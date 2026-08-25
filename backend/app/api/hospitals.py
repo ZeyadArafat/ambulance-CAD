@@ -9,12 +9,17 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import Hospital, HospitalCapacity, User, utc_now
 from ..models import Ambulance, Dispatch, DispatchDestination, Incident, IncidentCloseout
-from ..auth import current_user
+from ..auth import current_user, user_roles
 from .schemas import CloseoutInput, DestinationInput, StatusInput
 from .router_helpers import get_or_404
 
 router = APIRouter()
 contract_router = APIRouter()
+
+
+def assert_hospital_access(user: User, hospital_id: UUID, db: Session):
+    if "hospital" in user_roles(db, user.user_id) and user.hospital_id != hospital_id:
+        raise HTTPException(status_code=403, detail="Hospital account is restricted to its assigned facility")
 
 
 class HospitalCreate(BaseModel):
@@ -65,8 +70,11 @@ def create_hospital(payload: HospitalCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/", response_model=list[HospitalResponse])
-def list_hospitals(db: Session = Depends(get_db)):
-    return db.query(Hospital).filter(Hospital.status == "active").order_by(Hospital.hospital_name).all()
+def list_hospitals(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    query = db.query(Hospital).filter(Hospital.status == "active")
+    if "hospital" in user_roles(db, user.user_id):
+        query = query.filter(Hospital.hospital_id == user.hospital_id)
+    return query.order_by(Hospital.hospital_name).all()
 
 
 @router.patch("/{hospital_id}", response_model=HospitalResponse)
@@ -95,7 +103,8 @@ def update_capacity(hospital_id: UUID, payload: CapacityUpdate, db: Session = De
 
 
 @router.get("/{hospital_id}/capacity")
-def get_capacity(hospital_id: UUID, db: Session = Depends(get_db)):
+def get_capacity(hospital_id: UUID, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    assert_hospital_access(user, hospital_id, db)
     capacity = db.query(HospitalCapacity).filter(
         HospitalCapacity.hospital_id == hospital_id
     ).order_by(HospitalCapacity.updated_at.desc()).first()
@@ -123,7 +132,11 @@ def contract_sync_status(unit_id: UUID, statuses: list[StatusInput], db: Session
 
 @contract_router.get("/hospitals/capacity")
 def contract_hospital_capacity(db: Session = Depends(get_db), _: User = Depends(current_user)):
-    return db.query(Hospital).filter(Hospital.status == "active").all()
+    user = _
+    query = db.query(Hospital).filter(Hospital.status == "active")
+    if "hospital" in user_roles(db, user.user_id):
+        query = query.filter(Hospital.hospital_id == user.hospital_id)
+    return query.all()
 
 
 @contract_router.post("/dispatches/{dispatch_id}/destination-hospital")
@@ -150,11 +163,13 @@ def contract_closeout(incident_id: UUID, payload: CloseoutInput, db: Session = D
 
 @contract_router.get("/hospitals/{hospital_id}/inbound")
 def contract_inbound(hospital_id: UUID, db: Session = Depends(get_db), _: User = Depends(current_user)):
+    assert_hospital_access(_, hospital_id, db)
     return db.query(DispatchDestination).filter(DispatchDestination.hospital_id == hospital_id).all()
 
 
 @contract_router.post("/hospitals/{hospital_id}/capacity")
 def contract_capacity(hospital_id: UUID, payload: dict, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    assert_hospital_access(user, hospital_id, db)
     hospital = get_or_404(db, Hospital, Hospital.hospital_id, hospital_id, "Hospital")
     for key in ("capacity_status", "diversion_flag"):
         if key in payload:
@@ -167,6 +182,7 @@ def contract_capacity(hospital_id: UUID, payload: dict, db: Session = Depends(ge
 
 @contract_router.post("/hospitals/{hospital_id}/inbound/{dispatch_id}/acknowledge")
 def contract_acknowledge_inbound(hospital_id: UUID, dispatch_id: UUID, db: Session = Depends(get_db), _: User = Depends(current_user)):
+    assert_hospital_access(_, hospital_id, db)
     destination = db.query(DispatchDestination).filter(DispatchDestination.hospital_id == hospital_id, DispatchDestination.dispatch_id == dispatch_id).first()
     if not destination:
         raise HTTPException(status_code=404, detail="Inbound notification not found")

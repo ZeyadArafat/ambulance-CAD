@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from sqlalchemy import inspect, text
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -29,6 +30,12 @@ app.add_middleware(
 @app.on_event("startup")
 def startup():
     Base.metadata.create_all(bind=engine)
+    if not inspect(engine).has_table("users"):
+        return
+    columns = {column["name"] for column in inspect(engine).get_columns("users")}
+    if "hospital_id" not in columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE users ADD COLUMN hospital_id UUID NULL REFERENCES hospitals(hospital_id)"))
     with SessionLocal.begin() as db:
         ensure_default_roles(db)
     connect_mqtt()

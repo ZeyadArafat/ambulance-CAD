@@ -27,6 +27,9 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    hospital_id: Mapped[UUID | None] = mapped_column(
+        Uuid(as_uuid=True), ForeignKey("hospitals.hospital_id"), nullable=True
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)

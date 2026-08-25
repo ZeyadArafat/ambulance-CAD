@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import CrewMember, Staff, Station, User, Zone
+from ..models import CrewMember, Hospital, Staff, Station, User, Zone
 from ..models import utc_now
 from ..auth import current_user, hash_password, require_roles
 from ..models import Ambulance, Role, UserRole
@@ -159,7 +159,10 @@ def list_crew_members(db: Session = Depends(get_db)):
 # Versioned contract routes for administration and master data.
 @contract_router.post("/users", status_code=201)
 def contract_create_user(payload: PasswordUserCreate, db: Session = Depends(get_db), actor: User = Depends(require_roles("admin"))):
+    if payload.hospital_id:
+        get_or_404(db, Hospital, Hospital.hospital_id, payload.hospital_id, "Hospital")
     user = User(username=payload.username, password_hash=hash_password(payload.password), email=payload.email)
+    user.hospital_id = payload.hospital_id
     db.add(user)
     db.flush()
     for role_id in payload.role_ids:
@@ -182,6 +185,7 @@ def contract_list_users(active: bool | None = None, db: Session = Depends(get_db
             "email": user.email,
             "is_active": user.is_active,
             "role_ids": [role_id for role_id, in db.query(UserRole.role_id).filter(UserRole.user_id == user.user_id).all()],
+            "hospital_id": user.hospital_id,
         }
         for user in query.order_by(User.username).all()
     ]
@@ -190,12 +194,14 @@ def contract_list_users(active: bool | None = None, db: Session = Depends(get_db
 @contract_router.get("/users/{user_id}")
 def contract_get_user(user_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_roles("admin"))):
     user = get_or_404(db, User, User.user_id, user_id, "User")
-    return {"user_id": user.user_id, "username": user.username, "email": user.email, "is_active": user.is_active}
+    return {"user_id": user.user_id, "username": user.username, "email": user.email, "is_active": user.is_active, "hospital_id": user.hospital_id}
 
 
 @contract_router.patch("/users/{user_id}")
 def contract_patch_user(user_id: UUID, payload: UserPatch, db: Session = Depends(get_db), actor: User = Depends(require_roles("admin"))):
     user = get_or_404(db, User, User.user_id, user_id, "User")
+    if payload.hospital_id:
+        get_or_404(db, Hospital, Hospital.hospital_id, payload.hospital_id, "Hospital")
     old_value = {"email": user.email, "is_active": user.is_active, "role_ids": [role_id for role_id, in db.query(UserRole.role_id).filter(UserRole.user_id == user_id).all()]}
     for key, value in payload.model_dump(exclude_unset=True, exclude={"role_ids"}).items():
         setattr(user, key, value)

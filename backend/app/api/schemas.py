@@ -10,12 +10,14 @@ class PasswordUserCreate(BaseModel):
     password: str
     email: str
     role_ids: list[UUID] = []
+    hospital_id: UUID | None = None
 
 
 class UserPatch(BaseModel):
     email: str | None = None
     is_active: bool | None = None
     role_ids: list[UUID] | None = None
+    hospital_id: UUID | None = None
 
 
 class RoleInput(BaseModel):

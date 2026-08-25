@@ -3,7 +3,7 @@ from datetime import date
 
 from app.auth import ensure_default_roles, hash_password
 from app.database import Base, SessionLocal, engine
-from app.models import Ambulance, Role, Staff, Station, User, UserRole, Zone
+from app.models import Ambulance, Hospital, HospitalCapacity, Role, Staff, Station, User, UserRole, Zone, utc_now
 
 
 DEFAULT_USERS = (
@@ -38,6 +38,14 @@ DEFAULT_STATIONS = (
     ("CAI-ST-01", "Downtown Cairo Station", "Talaat Harb Square, Cairo", 30.0444, 31.2357),
     ("CAI-ST-02", "Nasr City Station", "Nasr City, Cairo", 30.0626, 31.3384),
     ("CAI-ST-03", "Maadi Station", "Maadi, Cairo", 29.9602, 31.2569),
+)
+
+DEFAULT_HOSPITALS = (
+    ("CAI-HOSP-01", "Central General Hospital", "Talaat Harb Square, Cairo", 30.0444, 31.2357, 18, 8, 4),
+    ("CAI-HOSP-02", "Northside Medical Center", "Nasr City, Cairo", 30.0626, 31.3384, 7, 3, 2),
+    ("CAI-HOSP-03", "St. Anne Emergency Hospital", "Maadi, Cairo", 29.9602, 31.2569, 14, 6, 3),
+    ("CAI-HOSP-04", "Riverside Medical Center", "Giza, Cairo", 30.0131, 31.2089, 0, 0, 0),
+    ("CAI-HOSP-05", "West County Trauma Center", "Dokki, Cairo", 30.0384, 31.2027, 4, 2, 1),
 )
 
 DEFAULT_AMBULANCES = (
@@ -88,6 +96,24 @@ def seed_users() -> int:
                 created_locations.append(f"station '{station_code}'")
             station_records[station_code] = station
 
+        hospital_records = {}
+        for code, name, address, latitude, longitude, emergency_beds, icu_beds, ambulance_slots in DEFAULT_HOSPITALS:
+            hospital = db.query(Hospital).filter(Hospital.hospital_code == code).first()
+            if hospital is None:
+                hospital = Hospital(
+                    hospital_code=code,
+                    hospital_name=name,
+                    address=address,
+                    latitude=latitude,
+                    longitude=longitude,
+                    capacity_status="full" if emergency_beds == 0 else "available",
+                    diversion_flag=emergency_beds == 0,
+                    status="active",
+                )
+                db.add(hospital)
+                db.flush()
+            hospital_records[code] = (hospital, emergency_beds, icu_beds, ambulance_slots)
+
         for code, call_sign, registration, ambulance_type, station_code, latitude, longitude in DEFAULT_AMBULANCES:
             ambulance = db.query(Ambulance).filter(Ambulance.ambulance_code == code).first()
             if ambulance is None:
@@ -128,6 +154,14 @@ def seed_users() -> int:
                 db.flush()
                 created_count += 1
                 created_accounts.append((username, role_name))
+
+            if role_name == "hospital" and user.hospital_id is None:
+                user.hospital_id = db.query(Hospital).filter(Hospital.status == "active").order_by(Hospital.hospital_name).first().hospital_id if db.query(Hospital).filter(Hospital.status == "active").first() else None
+
+            if role_name == "hospital" and user.hospital_id:
+                for hospital, emergency_beds, icu_beds, ambulance_slots in hospital_records.values():
+                    if not db.query(HospitalCapacity).filter(HospitalCapacity.hospital_id == hospital.hospital_id).first():
+                        db.add(HospitalCapacity(hospital_id=hospital.hospital_id, available_beds=emergency_beds, emergency_beds=emergency_beds, icu_beds=icu_beds, available_ambulance_slots=ambulance_slots, capacity_status=hospital.capacity_status, diversion_flag=hospital.diversion_flag, updated_by=user.user_id, updated_at=utc_now()))
 
             role = db.query(Role).filter(Role.role_name == role_name).one()
             assignment = db.query(UserRole).filter(

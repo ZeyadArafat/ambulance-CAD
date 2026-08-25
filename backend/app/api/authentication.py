@@ -28,6 +28,7 @@ class UserProfile(BaseModel):
     email: str
     is_active: bool
     roles: list[str]
+    hospital_id: UUID | None = None
 
 
 @router.post("/auth/login", response_model=TokenResponse)
@@ -55,4 +56,4 @@ def refresh(user: User = Depends(current_user)):
 
 @router.get("/auth/me", response_model=UserProfile)
 def me(user: User = Depends(current_user), db: Session = Depends(get_db)):
-    return {"user_id": user.user_id, "username": user.username, "email": user.email, "is_active": user.is_active, "roles": sorted(user_roles(db, user.user_id))}
+    return {"user_id": user.user_id, "username": user.username, "email": user.email, "is_active": user.is_active, "roles": sorted(user_roles(db, user.user_id)), "hospital_id": user.hospital_id}
