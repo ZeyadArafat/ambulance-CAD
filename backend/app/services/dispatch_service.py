@@ -19,9 +19,12 @@ def get_available_ambulances(db: Session):
 
     return (
         db.query(Ambulance)
+        .join(CrewMember, CrewMember.ambulance_id == Ambulance.ambulance_id)
         .filter(
-            Ambulance.status == "available"
+            Ambulance.status == "available",
+            CrewMember.status == "active",
         )
+        .distinct()
         .all()
     )
 
@@ -160,6 +163,7 @@ async def dispatch_ambulance(
     if incident.status not in [
         "new",
         "pending",
+        "submitted",
     ]:
         raise ValueError(
             "Incident has already been dispatched"

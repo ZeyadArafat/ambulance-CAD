@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Ambulance, Dispatch, DispatchAssignment, Incident
+from ..models import Ambulance, CrewMember, Dispatch, DispatchAssignment, Incident
 from ..models import DispatchDestination, DispatchMessage, Hospital, User, utc_now
 from ..auth import current_user
 from .schemas import DispatchInput, DispatchPatch, DestinationInput, MessageInput
@@ -38,6 +38,9 @@ class DispatchResponse(BaseModel):
     priority: str
     override_reason: str | None
     notes: str | None
+    ambulance_id: UUID | None = None
+    ambulance_code: str | None = None
+    crew_member_id: UUID | None = None
 
     model_config = {"from_attributes": True}
 
@@ -63,7 +66,34 @@ def list_dispatches(
     query = db.query(Dispatch)
     if status:
         query = query.filter(Dispatch.dispatch_status == status)
-    return query.order_by(Dispatch.assigned_at.desc()).all()
+    dispatches = query.order_by(Dispatch.assigned_at.desc()).all()
+    response = []
+
+    for dispatch in dispatches:
+        assignment = db.query(DispatchAssignment).filter(
+            DispatchAssignment.dispatch_id == dispatch.dispatch_id,
+        ).first()
+        ambulance = db.query(Ambulance).filter(
+            Ambulance.ambulance_id == assignment.ambulance_id,
+        ).first() if assignment else None
+        response.append({
+            "dispatch_id": dispatch.dispatch_id,
+            "incident_id": dispatch.incident_id,
+            "dispatcher_id": dispatch.dispatcher_id,
+            "assigned_at": dispatch.assigned_at,
+            "eta_minutes": dispatch.eta_minutes,
+            "estimated_arrival_time": dispatch.estimated_arrival_time,
+            "actual_arrival_time": dispatch.actual_arrival_time,
+            "dispatch_status": dispatch.dispatch_status,
+            "priority": dispatch.priority,
+            "override_reason": dispatch.override_reason,
+            "notes": dispatch.notes,
+            "ambulance_id": assignment.ambulance_id if assignment else None,
+            "ambulance_code": ambulance.ambulance_code if ambulance else None,
+            "crew_member_id": assignment.crew_member_id if assignment else None,
+        })
+
+    return response
 
 
 async def _route_for(ambulance: Ambulance, incident: Incident) -> RouteResponse:
@@ -158,7 +188,30 @@ def update_dispatch_status(
 
 @contract_router.get("/units/live")
 def contract_live_units(db: Session = Depends(get_db), _: User = Depends(current_user)):
-    return db.query(Ambulance).order_by(Ambulance.ambulance_code).all()
+    units = db.query(Ambulance).join(
+        CrewMember, CrewMember.ambulance_id == Ambulance.ambulance_id
+    ).filter(
+        CrewMember.status == "active",
+    ).distinct().order_by(Ambulance.ambulance_code).all()
+    return [
+        {
+            "ambulance_id": unit.ambulance_id,
+            "station_id": unit.station_id,
+            "zone_id": unit.zone_id,
+            "ambulance_code": unit.ambulance_code,
+            "call_sign": unit.call_sign,
+            "ambulance_type": unit.ambulance_type,
+            "current_latitude": unit.current_latitude,
+            "current_longitude": unit.current_longitude,
+            "status": unit.status,
+            "vehicle_health_status": unit.vehicle_health_status,
+            "crew_member_id": crew_member.crew_member_id if (crew_member := db.query(CrewMember).filter(
+                CrewMember.ambulance_id == unit.ambulance_id,
+                CrewMember.status == "active",
+            ).order_by(CrewMember.created_at.desc()).first()) else None,
+        }
+        for unit in units
+    ]
 
 
 @contract_router.get("/incidents/{incident_id}/recommendation")

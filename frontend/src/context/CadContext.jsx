@@ -6,8 +6,10 @@ import {
   addIncidentNote,
   createIncident,
   createV1Call,
-  createDispatch,
+  createV1Dispatch,
+  getDispatchBoard,
   getDispatchEta,
+  getDispatchRecommendationV1,
   getIncidentById,
   getIncidentQueue,
   listIncidents,
@@ -97,13 +99,15 @@ const normalizeIncident = (incident = {}, fallbackId = 'CAD-0000') => {
 }
 
 const normalizeUnit = (unit = {}, fallbackId = 'AMB-00') => {
-  const id = unit.id || unit.ambulance_id || unit.ambulance_code || fallbackId
+  const id = unit.id || unit.ambulance_code || unit.code || unit.ambulance_id || fallbackId
 
   return {
     ...unit,
     id: String(id),
     callSign: unit.callSign || unit.call_sign || unit.ambulance_code || String(id),
-    status: unit.status || 'AVAILABLE',
+    status: String(unit.status || 'available').toUpperCase(),
+    capability: unit.capability || unit.ambulance_type || 'UNKNOWN',
+    crew_member_id: unit.crew_member_id || unit.crewMemberId || null,
     assignedIncident: unit.assignedIncident || unit.assigned_incident || null,
   }
 }
@@ -185,24 +189,61 @@ const buildIncidentApiPayload = (payload) => {
 
 const attemptBackendSync = async () => {
   try {
-    const [incidentResponse, unitResponse, queueResponse] = await Promise.all([
+    const [incidentResponse, unitResponse, queueResponse, dispatchResponse] = await Promise.all([
       listIncidents({}),
       listUnits(),
       getIncidentQueue(),
+      getDispatchBoard(),
     ])
 
     const incidentList = coerceArray(incidentResponse)
     const unitList = coerceArray(unitResponse)
     const queueList = coerceArray(queueResponse)
+    const dispatchList = coerceArray(dispatchResponse)
+    const activeDispatches = dispatchList.filter((dispatch) => !['completed', 'cancelled'].includes(String(dispatch.dispatch_status).toLowerCase()))
+    const dispatchByIncident = new Map(activeDispatches.map((dispatch) => [String(dispatch.incident_id), dispatch]))
+    const dispatchByAmbulance = new Map(activeDispatches.flatMap((dispatch) => [
+      [String(dispatch.ambulance_id), dispatch],
+      [String(dispatch.ambulance_code), dispatch],
+    ]))
+    const sourceIncidents = incidentList.length ? incidentList : queueList
 
     return {
       success: true,
-      incidents: incidentList.length
-        ? incidentList.map((item, index) => normalizeIncident(item, `CAD-${index + 1}`))
-        : queueList.map((item, index) => normalizeIncident(item, `CAD-${index + 1}`)),
-      units: unitList.length
-        ? unitList.map((item, index) => normalizeUnit(item, `AMB-${String(index + 1).padStart(2, '0')}`))
-        : [],
+      incidents: sourceIncidents.map((item, index) => {
+        const normalized = normalizeIncident(item, `CAD-${index + 1}`)
+        const dispatch = dispatchByIncident.get(String(normalized.incident_id)) || activeDispatches.find(
+          (candidate) => String(candidate.ambulance_code) === String(normalized.assignedUnit)
+        )
+        return dispatch
+          ? normalizeIncident({ ...item, assignedUnit: dispatch.ambulance_code, dispatch_id: dispatch.dispatch_id, eta_minutes: dispatch.eta_minutes, status: dispatch.dispatch_status }, normalized.id)
+          : normalized
+      }),
+      units: (() => {
+        const normalizedUnits = unitList.map((item, index) => {
+          const unit = normalizeUnit(item, `AMB-${String(index + 1).padStart(2, '0')}`)
+          const dispatch = dispatchByAmbulance.get(String(unit.ambulance_id)) || dispatchByAmbulance.get(String(unit.ambulance_code))
+
+          return dispatch
+            ? { ...unit, status: String(dispatch.dispatch_status).toUpperCase(), assignedIncident: String(dispatch.incident_id), eta: dispatch.eta_minutes ?? unit.eta }
+            : unit
+        })
+        const knownAmbulances = new Set(normalizedUnits.flatMap((unit) => [String(unit.ambulance_id), String(unit.ambulance_code)]))
+
+        return [
+          ...normalizedUnits,
+          ...activeDispatches
+            .filter((dispatch) => !knownAmbulances.has(String(dispatch.ambulance_id)) && !knownAmbulances.has(String(dispatch.ambulance_code)))
+            .map((dispatch) => normalizeUnit({
+              ambulance_id: dispatch.ambulance_id,
+              ambulance_code: dispatch.ambulance_code,
+              crew_member_id: dispatch.crew_member_id,
+              status: dispatch.dispatch_status,
+              assignedIncident: dispatch.incident_id,
+              eta: dispatch.eta_minutes,
+            }, `AMB-${dispatch.ambulance_id}`)),
+        ]
+      })(),
     }
   } catch (error) {
     return {
@@ -530,11 +571,13 @@ export function CadProvider({ children }) {
 
   const updateIncidentStatus = async (incidentId, status) => {
     const incident = incidents.find((item) => item.id === incidentId)
+    const normalizedStatus = String(status || '').toLowerCase()
+    const dispatchStatuses = ['en_route', 'arrived_scene', 'transporting', 'arrived_hospital', 'completed', 'cancelled']
 
-    if (incident?.dispatch_id) {
+    if (incident?.dispatch_id && dispatchStatuses.includes(normalizedStatus)) {
       try {
-        const dispatch = await patchDispatch(incident.dispatch_id, { status })
-        const updatedIncident = { ...incident, status: dispatch?.dispatch_status || status, dispatch }
+        const dispatch = await patchDispatch(incident.dispatch_id, { status: normalizedStatus })
+        const updatedIncident = { ...incident, status: dispatch?.dispatch_status || normalizedStatus, dispatch }
         setBackendAvailable(true)
         setBackendError('')
         setIncidents((prev) => prev.map((item) => item.id === incidentId ? updatedIncident : item))
@@ -548,7 +591,7 @@ export function CadProvider({ children }) {
 
     if (incident?.incident_id) {
       try {
-        const response = await updateIncident(incident.incident_id, { status })
+        const response = await updateIncident(incident.incident_id, { status: normalizedStatus })
         const updatedIncident = normalizeIncident(response, incident.id)
         setBackendAvailable(true)
         setBackendError('')
@@ -577,15 +620,13 @@ export function CadProvider({ children }) {
   const assignUnit = async (incidentId, unitId) => {
     const incident = incidents.find((item) => item.id === incidentId)
     const targetUnit = units.find((item) => item.id === unitId)
-    const dispatcherId = currentUser?.backendProfile?.user_id
     const crewMemberId = targetUnit?.crew_member_id || targetUnit?.crewMemberId
 
-    if (incident?.incident_id && targetUnit?.ambulance_id && dispatcherId && crewMemberId) {
+    if (incident?.incident_id && targetUnit?.ambulance_id && crewMemberId) {
       try {
-        const dispatch = await createDispatch({
+        const dispatch = await createV1Dispatch({
           incident_id: incident.incident_id,
           ambulance_id: targetUnit.ambulance_id,
-          dispatcher_id: dispatcherId,
           crew_member_id: crewMemberId,
         })
 
@@ -598,38 +639,21 @@ export function CadProvider({ children }) {
       } catch (error) {
         setBackendAvailable(false)
         setBackendError(error.message || 'dispatch-create-failed')
+        setNotifications((prev) => [{ id: Date.now(), type: 'error', message: error.message || 'Dispatch failed.' }, ...prev].slice(0, 4))
+        return { success: false, backendPersisted: false, error: error.message || 'Dispatch failed.' }
       }
     }
 
-    setIncidents((prev) =>
-      prev.map((incident) =>
-        incident.id === incidentId
-          ? {
-              ...incident,
-              assignedUnit: unitId,
-              status: 'Dispatched',
-            }
-          : incident
-      )
-    )
-
-    setUnits((prev) =>
-      prev.map((unit) =>
-        unit.id === unitId
-          ? {
-              ...unit,
-              status: 'EN ROUTE',
-              assignedIncident: incidentId,
-            }
-          : unit
-      )
-    )
-
-    setNotifications((prev) =>
-      [{ id: Date.now(), type: 'warning', message: `${unitId} dispatched to ${incidentId} using local fallback.` }, ...prev].slice(0, 4)
-    )
-
-    return null
+    const error = !incident?.incident_id
+      ? 'Incident is not linked to a backend record.'
+      : !targetUnit?.ambulance_id
+        ? 'Ambulance is not linked to a backend record.'
+        : !crewMemberId
+          ? 'Ambulance has no active crew member.'
+          : 'Dispatch could not be created.'
+    setBackendError(error)
+    setNotifications((prev) => [{ id: Date.now(), type: 'error', message: error }, ...prev].slice(0, 4))
+    return { success: false, backendPersisted: false, error }
   }
 
   const reassignUnit = async (incidentId, unitId) => {
@@ -685,7 +709,20 @@ export function CadProvider({ children }) {
     return null
   }
 
-  const requestAdditionalUnit = (incidentId) => {
+  const requestAdditionalUnit = async (incidentId) => {
+    const incident = incidents.find((item) => item.id === incidentId)
+
+    if (incident?.dispatch_id) {
+      try {
+        await updateV1Dispatch(incident.dispatch_id, { notes: 'Additional response unit requested by dispatcher.' })
+        setBackendAvailable(true)
+        setBackendError('')
+      } catch (error) {
+        setBackendAvailable(false)
+        setBackendError(error.message || 'support-request-failed')
+      }
+    }
+
     setIncidents((prev) =>
       prev.map((item) =>
         item.id === incidentId ? { ...item, supportRequested: true } : item
@@ -816,6 +853,19 @@ export function CadProvider({ children }) {
     }
   }
 
+  const fetchDispatchRecommendation = async (incidentId) => {
+    try {
+      const response = await getDispatchRecommendationV1(incidentId)
+      setBackendAvailable(true)
+      setBackendError('')
+      return response?.recommendations || []
+    } catch (error) {
+      setBackendAvailable(false)
+      setBackendError(error.message || 'dispatch-recommendation-failed')
+      return []
+    }
+  }
+
   const refreshQueue = async () => {
     const next = await attemptBackendSync()
     if (next.success) {
@@ -890,6 +940,7 @@ export function CadProvider({ children }) {
 
       submitIncident,
       fetchDispatchEta,
+      fetchDispatchRecommendation,
       refreshQueue,
 
       loginAs,

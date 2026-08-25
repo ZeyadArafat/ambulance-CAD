@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
   ArrowUp,
@@ -52,6 +52,9 @@ export default function Dispatcher() {
     sendMessage,
     appendNote,
     updateIncidentStatus,
+    fetchDispatchRecommendation,
+    fetchDispatchEta,
+    refreshQueue,
   } = useCad()
 
   const [selectedId, setSelectedId] = useState(incidents[0]?.id || '')
@@ -59,6 +62,9 @@ export default function Dispatcher() {
   const [messageText, setMessageText] = useState('')
   const [noteText, setNoteText] = useState('')
   const [feedback, setFeedback] = useState('Operations ready')
+  const [recommendations, setRecommendations] = useState([])
+  const [recommendationLoading, setRecommendationLoading] = useState(false)
+  const [eta, setEta] = useState(null)
 
   const sortedIncidents = useMemo(
     () =>
@@ -73,10 +79,86 @@ export default function Dispatcher() {
   )
 
   const selected = incidents.find((incident) => incident.id === selectedId) || sortedIncidents[0] || null
-  const availableUnits = units.filter((unit) => unit.status === 'AVAILABLE')
+  const dispatchableUnits = units.filter((unit) => unit.status === 'AVAILABLE' && unit.crew_member_id)
+  const availableUnits = dispatchableUnits
+  const dispatchedUnits = units.filter((unit) => unit.status !== 'AVAILABLE')
+  const trackedUnits = [...dispatchableUnits, ...dispatchedUnits.filter((unit) => !dispatchableUnits.includes(unit))]
   const assignedUnit = units.find((unit) => unit.id === selected?.assignedUnit)
-  const recommendedUnit = availableUnits[0] || assignedUnit || null
-  const chosenUnit = units.find((unit) => unit.id === selectedUnitId) || assignedUnit || recommendedUnit
+  const recommendedUnit = recommendations[0]
+    ? units.find((unit) =>
+        String(unit.ambulance_id) === String(recommendations[0].ambulance_id) ||
+        String(unit.id) === String(recommendations[0].code) ||
+        String(unit.ambulance_code) === String(recommendations[0].code)
+      )
+    : dispatchableUnits[0]
+  const recommendedUnitWithRoute = recommendedUnit
+    ? { ...recommendedUnit, eta: recommendations[0]?.eta_minutes ?? recommendedUnit.eta, distance: recommendations[0]?.distance_km ?? recommendedUnit.distance }
+    : assignedUnit || null
+  const chosenUnit = units.find((unit) => unit.id === selectedUnitId) || assignedUnit || recommendedUnitWithRoute
+  const recommendedResponse = recommendations[0]
+  const displayUnit = chosenUnit || (recommendedResponse ? {
+    id: recommendedResponse.code,
+    callSign: recommendedResponse.code,
+    capability: recommendedResponse.ambulance_type,
+    eta: recommendedResponse.eta_minutes,
+    distance: recommendedResponse.distance_km,
+    status: 'AVAILABLE',
+  } : null)
+  const displayEta = selected?.dispatch_id ? eta ?? selected.eta_minutes ?? displayUnit?.eta : selected?.eta_minutes ?? recommendedResponse?.eta_minutes ?? displayUnit?.eta
+
+  useEffect(() => {
+    let active = true
+
+    if (!selected?.incident_id) {
+      setRecommendations([])
+      return () => { active = false }
+    }
+
+    setRecommendationLoading(true)
+    fetchDispatchRecommendation(selected.incident_id)
+      .then((nextRecommendations) => {
+        if (active) setRecommendations(nextRecommendations)
+      })
+      .finally(() => {
+        if (active) setRecommendationLoading(false)
+      })
+
+    return () => { active = false }
+  }, [selected?.incident_id, fetchDispatchRecommendation])
+
+  useEffect(() => {
+    let active = true
+
+    const refresh = () => refreshQueue()
+    refresh()
+    const intervalId = window.setInterval(refresh, 30000)
+
+    return () => {
+      active = false
+      window.clearInterval(intervalId)
+    }
+  }, [refreshQueue])
+
+  useEffect(() => {
+    let active = true
+
+    if (!selected?.dispatch_id) {
+      setEta(null)
+      return () => { active = false }
+    }
+
+    const refreshEta = () => fetchDispatchEta(selected.dispatch_id).then((response) => {
+      if (active) setEta(response?.eta_minutes ?? null)
+    })
+
+    refreshEta()
+    const intervalId = window.setInterval(refreshEta, 30000)
+
+    return () => {
+      active = false
+      window.clearInterval(intervalId)
+    }
+  }, [selected?.dispatch_id])
 
   const duplicateIncident = useMemo(() => {
     if (!selected || !selected.location) return null
@@ -96,21 +178,21 @@ export default function Dispatcher() {
 
   const selectedNoteCount = selected?.notes?.length || 0
 
-  const applyUnitDispatch = () => {
+  const applyUnitDispatch = async () => {
     if (!selected || !chosenUnit) {
       setFeedback('No eligible unit selected for dispatch.')
       return
     }
 
     if (selected.assignedUnit && selected.assignedUnit !== chosenUnit.id) {
-      reassignUnit(selected.id, chosenUnit.id)
-      setFeedback(`${selected.id} reassigned to ${chosenUnit.id}.`)
+      const result = await reassignUnit(selected.id, chosenUnit.id)
+      setFeedback(result?.backendPersisted === false ? result.error : `${selected.id} reassigned to ${chosenUnit.id}.`)
       return
     }
 
     if (!selected.assignedUnit) {
-      assignUnit(selected.id, chosenUnit.id)
-      setFeedback(`${selected.id} assigned to ${chosenUnit.id}.`)
+      const result = await assignUnit(selected.id, chosenUnit.id)
+      setFeedback(result?.backendPersisted === false ? result.error : `${selected.id} assigned to ${chosenUnit.id}.`)
       return
     }
 
@@ -326,15 +408,15 @@ export default function Dispatcher() {
                   <div className="rounded border border-[#222B3A] bg-[#0E141B] p-3">
                     <div className="flex items-center justify-between">
                       <span className="cad-label mb-0">RECOMMENDED RESPONSE</span>
-                      <span className="text-[10px] font-bold text-[#38BDF8]">{chosenUnit?.eta ?? '—'} min</span>
+                      <span className="text-[10px] font-bold text-[#38BDF8]">{displayEta ?? '—'} min</span>
                     </div>
-                    {chosenUnit ? (
+                    {displayUnit ? (
                       <>
                         <div className="mt-2 flex items-center justify-between text-[11px] text-[#F5F7FA]">
-                          <span>{chosenUnit.id} · {chosenUnit.callSign}</span>
-                          <span>{chosenUnit.capability}</span>
+                          <span>{displayUnit.id} · {displayUnit.callSign}</span>
+                          <span>{displayUnit.capability}</span>
                         </div>
-                        <div className="mt-1 text-[10px] text-[#7E8A9A]">{chosenUnit.distance} mi · {chosenUnit.status} · {chosenUnit.homeZone}</div>
+                        <div className="mt-1 text-[10px] text-[#7E8A9A]">{displayUnit.distance ?? '—'} km · {displayUnit.status} · {displayUnit.homeZone || 'ROAD NETWORK ETA'}</div>
                       </>
                     ) : (
                       <p className="mt-2 text-[11px] text-[#FCA5A5]">No available unit can be recommended.</p>
@@ -342,7 +424,7 @@ export default function Dispatcher() {
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
-                    <ActionButton variant="primary" icon={UserPlus} disabled={!selected || !chosenUnit} onClick={applyUnitDispatch}>
+                    <ActionButton variant="primary" icon={UserPlus} disabled={!selected || !chosenUnit || !chosenUnit.crew_member_id} onClick={applyUnitDispatch}>
                       {selected.assignedUnit ? 'REASSIGN UNIT' : 'ASSIGN UNIT'}
                     </ActionButton>
                     <ActionButton icon={Radio} disabled={!selected} onClick={() => requestAdditionalUnit(selected.id)}>
@@ -379,7 +461,7 @@ export default function Dispatcher() {
               className="h-full w-full"
               title="LIVE DISPATCH MAP"
               incidents={incidents.filter((incident) => incident.status !== 'Completed')}
-              units={units}
+              units={trackedUnits}
               showControls
             />
           </div>
@@ -397,8 +479,8 @@ export default function Dispatcher() {
           className="flex min-h-0 flex-col overflow-hidden"
         >
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
-            {availableUnits.length ? (
-              availableUnits.map((unit) => (
+            {dispatchableUnits.length ? (
+              dispatchableUnits.map((unit) => (
                 <button
                   key={unit.id}
                   type="button"
@@ -430,13 +512,28 @@ export default function Dispatcher() {
           </div>
         </Panel>
 
+        <Panel
+          title="DISPATCHED AMBULANCES"
+          subtitle={`${dispatchedUnits.length} ACTIVE IN RESPONSE`}
+          className="col-start-3 row-start-2 flex min-h-0 flex-col overflow-hidden"
+        >
+          <div className="min-h-0 flex-1 overflow-y-auto p-2">
+            {dispatchedUnits.length ? dispatchedUnits.map((unit) => (
+              <button key={unit.id} type="button" onClick={() => setSelectedUnitId(unit.id)} className="mb-1 flex w-full items-center justify-between border-b border-[#222B3A] px-2 py-1 text-left text-[10px]">
+                <span className="font-bold text-[#F5F7FA]">{unit.id}</span>
+                <span className="text-[#38BDF8]">{unit.status} · {unit.assignedIncident || 'ACTIVE'}</span>
+              </button>
+            )) : <div className="text-[10px] text-[#7E8A9A]">No ambulances currently dispatched.</div>}
+          </div>
+        </Panel>
+
         <Panel title="DISPATCH OPERATIONS" subtitle="ETA / NOTES / COMMUNICATIONS" className="col-span-3 flex min-h-0 flex-col overflow-hidden">
           <div className="grid h-full min-h-0 grid-cols-[220px_minmax(0,1.1fr)_minmax(0,1fr)] gap-3 p-3">
             <div className="rounded border border-[#222B3A] bg-[#0E141B] p-3">
               <div className="flex items-center gap-2 text-[10px] font-bold tracking-[0.12em] text-[#7E8A9A]">
                 <Clock3 size={14} className="text-[#38BDF8]" /> ETA / STATUS
               </div>
-              <div className="mt-3 text-3xl font-bold text-[#38BDF8]">{chosenUnit?.eta ?? '—'} <span className="text-xs font-normal text-[#7E8A9A]">MIN</span></div>
+              <div className="mt-3 text-3xl font-bold text-[#38BDF8]">{eta ?? selected?.eta_minutes ?? chosenUnit?.eta ?? (recommendationLoading ? '...' : '—')} <span className="text-xs font-normal text-[#7E8A9A]">MIN</span></div>
               <div className="mt-3 space-y-2 text-[11px] text-[#AAB4C3]">
                 <div className="flex items-center justify-between">
                   <span>Selected unit</span>

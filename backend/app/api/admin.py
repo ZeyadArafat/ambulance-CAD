@@ -303,6 +303,44 @@ def contract_list_zones(db: Session = Depends(get_db), _: User = Depends(current
     return db.query(Zone).order_by(Zone.zone_code).all()
 
 
+@contract_router.get("/staff/paramedics")
+def contract_list_paramedics(db: Session = Depends(get_db), _: User = Depends(current_user)):
+    return db.query(Staff).join(UserRole, UserRole.user_id == Staff.user_id).join(
+        Role, Role.role_id == UserRole.role_id
+    ).filter(
+        Role.role_name == "paramedic",
+        Staff.employment_status == "active",
+    ).order_by(Staff.last_name, Staff.first_name).all()
+
+
+@contract_router.post("/crew", status_code=201)
+def contract_create_crew_member(
+    payload: CrewCreate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_roles("admin", "supervisor", "operations-supervisor")),
+):
+    get_or_404(db, Ambulance, Ambulance.ambulance_id, payload.ambulance_id, "Ambulance")
+    staff = get_or_404(db, Staff, Staff.staff_id, payload.staff_id, "Staff member")
+    if staff.employment_status != "active":
+        raise HTTPException(status_code=400, detail="Staff member is not active")
+    if not db.query(UserRole).join(Role, Role.role_id == UserRole.role_id).filter(
+        UserRole.user_id == staff.user_id,
+        Role.role_name == "paramedic",
+    ).first():
+        raise HTTPException(status_code=400, detail="Only staff with the paramedic role can join an ambulance crew")
+    existing = db.query(CrewMember).filter(
+        CrewMember.staff_id == payload.staff_id,
+        CrewMember.status == "active",
+    ).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Staff member is already assigned to an active crew")
+    crew_member = CrewMember(**payload.model_dump())
+    db.add(crew_member)
+    db.commit()
+    db.refresh(crew_member)
+    return crew_member
+
+
 @contract_router.post("/vehicles", status_code=201)
 def contract_create_vehicle(payload: VehicleInput, db: Session = Depends(get_db), actor: User = Depends(require_roles("admin", "supervisor"))):
     get_or_404(db, Station, Station.station_id, payload.station_id, "Station")

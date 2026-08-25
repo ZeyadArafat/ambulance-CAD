@@ -1,4 +1,5 @@
 import os
+from math import asin, cos, radians, sin, sqrt
 
 import httpx
 
@@ -7,6 +8,23 @@ CANDIDATE_OSRM_URLS = [
     os.getenv("OSRM_URL", "http://localhost:5000"),
     "http://osrm:5000",
 ]
+
+
+def _fallback_route(start_lat: float, start_lon: float, end_lat: float, end_lon: float):
+    earth_radius_km = 6371.0
+    lat_delta = radians(end_lat - start_lat)
+    lon_delta = radians(end_lon - start_lon)
+    start_lat_radians = radians(start_lat)
+    end_lat_radians = radians(end_lat)
+    haversine = sin(lat_delta / 2) ** 2 + cos(start_lat_radians) * cos(end_lat_radians) * sin(lon_delta / 2) ** 2
+    distance_km = earth_radius_km * 2 * asin(sqrt(haversine))
+    duration_minutes = max(1.0, distance_km / 35.0 * 60.0)
+    return {
+        "distance_km": distance_km,
+        "duration_minutes": duration_minutes,
+        "coordinates": [[start_lon, start_lat], [end_lon, end_lat]],
+        "routing_source": "straight_line_fallback",
+    }
 
 
 async def get_route(
@@ -36,18 +54,14 @@ async def get_route(
                     params=params,
                 )
 
-            if response.status_code >= 400:
-                last_error = RuntimeError(
-                    f"OSRM request failed for {base_url}: {response.status_code} {response.text}"
-                )
-                continue
-
             data = response.json()
 
             if data.get("code") != "Ok":
                 last_error = RuntimeError(
                     f"OSRM routing failed for {base_url}: {data}"
                 )
+                if data.get("code") == "NoRoute":
+                    continue
                 continue
 
             route = data["routes"][0]
@@ -62,7 +76,7 @@ async def get_route(
             last_error = exc
             continue
 
-    if last_error is not None:
+    if last_error is not None and "NoRoute" not in str(last_error):
         raise RuntimeError(f"Unable to reach OSRM: {last_error}")
 
-    raise RuntimeError("Unable to reach OSRM")
+    return _fallback_route(start_lat, start_lon, end_lat, end_lon)

@@ -1,1 +1,1 @@
-import UnitCard from './UnitCard'; export default function UnitList({units,selectedId,onSelect}){return <div className="cad-scroll">{units.map(u=><UnitCard key={u.id} unit={u} selected={u.id===selectedId} onClick={()=>onSelect?.(u)}/>)}</div>}
+import UnitCard from './UnitCard'; export default function UnitList({units,selectedId,onSelect}){return <div className="cad-scroll min-h-[280px]">{units.map(u=><UnitCard key={u.id} unit={u} selected={u.id===selectedId} onClick={()=>onSelect?.(u)}/>)}</div>}
