@@ -15,12 +15,14 @@ import {
   getZones,
   getZoneCoverageAlerts,
   listHospitals,
+  listAmbulances,
   createCrewMember,
   reallocateUnit,
 } from '../../api/emsApi'
 
 export default function OperationsSupervisor() {
-  const { units, incidents, hospitals: contextHospitals, setUnits } = useCad()
+  const { units: liveUnits, incidents, hospitals: contextHospitals, setUnits } = useCad()
+  const [units, setFleetUnits] = useState(liveUnits)
   const [unitId, setUnitId] = useState(units[0]?.id)
   const [zoneId, setZoneId] = useState('')
   const [stationId, setStationId] = useState('')
@@ -47,8 +49,8 @@ export default function OperationsSupervisor() {
 
   useEffect(() => {
     let active = true
-    Promise.allSettled([getFleetDashboard(), getStaffingCurrent(), getZoneCoverageAlerts(), getZones(), getStations(), listHospitals(), getOperationalReports(), getParamedicStaff()])
-      .then(([dashboard, currentStaffing, alerts, zoneList, stationList, hospitalList, report, paramedicList]) => {
+    Promise.allSettled([getFleetDashboard(), getStaffingCurrent(), getZoneCoverageAlerts(), getZones(), getStations(), listHospitals(), getOperationalReports(), getParamedicStaff(), listAmbulances()])
+      .then(([dashboard, currentStaffing, alerts, zoneList, stationList, hospitalList, report, paramedicList, ambulanceList]) => {
         if (!active) return
         if (dashboard.status === 'fulfilled') setFleetDashboard(dashboard.value)
         if (currentStaffing.status === 'fulfilled') setStaffing(Array.isArray(currentStaffing.value) ? currentStaffing.value : [])
@@ -58,6 +60,19 @@ export default function OperationsSupervisor() {
         if (hospitalList.status === 'fulfilled') setHospitals(Array.isArray(hospitalList.value) ? hospitalList.value : contextHospitals)
         if (report.status === 'fulfilled') setOperationalReport(report.value)
         if (paramedicList.status === 'fulfilled') setParamedics(Array.isArray(paramedicList.value) ? paramedicList.value : [])
+        if (ambulanceList.status === 'fulfilled') {
+          const fleet = (Array.isArray(ambulanceList.value) ? ambulanceList.value : []).map((unit) => ({
+            ...unit,
+            id: unit.ambulance_code || unit.ambulance_id,
+            callSign: unit.call_sign || unit.ambulance_code,
+            capability: unit.ambulance_type,
+            status: String(unit.status || 'available').toUpperCase(),
+            latitude: unit.current_latitude,
+            longitude: unit.current_longitude,
+          }))
+          setFleetUnits(fleet)
+          setUnits(fleet)
+        }
       })
       .finally(() => active && setLoading(false))
     return () => { active = false }
@@ -76,7 +91,9 @@ export default function OperationsSupervisor() {
     if (!selected || !zoneId || !stationId) return
     try {
       const updated = await reallocateUnit(selected.ambulance_id, { station_id: stationId, zone_id: zoneId })
-      setUnits((items) => items.map((unit) => unit.id === unitId ? { ...unit, ...updated, zone_id: zoneId, station_id: stationId } : unit))
+      const updateLocalUnits = (items) => items.map((unit) => unit.id === unitId ? { ...unit, ...updated, zone_id: zoneId, station_id: stationId, latitude: updated.current_latitude ?? unit.latitude, longitude: updated.current_longitude ?? unit.longitude } : unit)
+      setFleetUnits(updateLocalUnits)
+      setUnits(updateLocalUnits)
       setNotice(`${unitId} reallocated successfully.`)
     } catch (error) {
       setNotice(error.message || 'Unit reallocation failed.')

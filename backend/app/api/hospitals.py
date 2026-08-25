@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Hospital, HospitalCapacity, User, utc_now
-from ..models import Ambulance, Dispatch, DispatchDestination, Incident, IncidentCloseout
+from ..models import Ambulance, Dispatch, DispatchAssignment, DispatchDestination, Incident, IncidentCloseout, Patient, PrehospitalAssessment
 from ..auth import current_user, user_roles
 from .schemas import CloseoutInput, DestinationInput, StatusInput
 from .router_helpers import get_or_404
@@ -143,8 +143,15 @@ def contract_hospital_capacity(db: Session = Depends(get_db), _: User = Depends(
 def contract_destination_hospital(dispatch_id: UUID, payload: DestinationInput, db: Session = Depends(get_db), user: User = Depends(current_user)):
     get_or_404(db, Dispatch, Dispatch.dispatch_id, dispatch_id, "Dispatch")
     get_or_404(db, Hospital, Hospital.hospital_id, payload.hospital_id, "Hospital")
-    destination = DispatchDestination(dispatch_id=dispatch_id, hospital_id=payload.hospital_id, selected_by=user.user_id)
-    db.add(destination)
+    destination = db.query(DispatchDestination).filter(DispatchDestination.dispatch_id == dispatch_id).first()
+    if destination:
+        destination.hospital_id = payload.hospital_id
+        destination.selected_by = user.user_id
+        destination.selected_at = utc_now()
+        destination.acknowledged_at = None
+    else:
+        destination = DispatchDestination(dispatch_id=dispatch_id, hospital_id=payload.hospital_id, selected_by=user.user_id)
+        db.add(destination)
     db.commit()
     db.refresh(destination)
     return destination
@@ -164,7 +171,48 @@ def contract_closeout(incident_id: UUID, payload: CloseoutInput, db: Session = D
 @contract_router.get("/hospitals/{hospital_id}/inbound")
 def contract_inbound(hospital_id: UUID, db: Session = Depends(get_db), _: User = Depends(current_user)):
     assert_hospital_access(_, hospital_id, db)
-    return db.query(DispatchDestination).filter(DispatchDestination.hospital_id == hospital_id).all()
+    destinations = db.query(DispatchDestination).filter(DispatchDestination.hospital_id == hospital_id).all()
+    response = []
+    for destination in destinations:
+        dispatch = db.query(Dispatch).filter(Dispatch.dispatch_id == destination.dispatch_id).first()
+        assignment = db.query(DispatchAssignment).filter(DispatchAssignment.dispatch_id == destination.dispatch_id).first()
+        assessment = db.query(PrehospitalAssessment).filter(
+            PrehospitalAssessment.assignment_id == assignment.assignment_id,
+        ).order_by(PrehospitalAssessment.assessment_time.desc()).first() if assignment else None
+        patient = db.query(Patient).filter(Patient.patient_id == assessment.patient_id).first() if assessment else None
+        response.append({
+            "destination_id": destination.destination_id,
+            "dispatch_id": destination.dispatch_id,
+            "hospital_id": destination.hospital_id,
+            "selected_at": destination.selected_at,
+            "acknowledged_at": destination.acknowledged_at,
+            "patient": {
+                "patient_id": patient.patient_id,
+                "medical_record_no": patient.medical_record_no,
+                "name": " ".join(filter(None, [patient.first_name, patient.middle_name, patient.last_name])),
+                "gender": patient.gender,
+                "blood_type": patient.blood_type,
+            } if patient else None,
+            "assessment": {
+                "assessment_id": assessment.assessment_id,
+                "assessment_time": assessment.assessment_time,
+                "consciousness_level": assessment.consciousness_level,
+                "airway_status": assessment.airway_status,
+                "breathing_status": assessment.breathing_status,
+                "circulation_status": assessment.circulation_status,
+                "heart_rate": assessment.heart_rate,
+                "respiratory_rate": assessment.respiratory_rate,
+                "systolic_bp": assessment.systolic_bp,
+                "diastolic_bp": assessment.diastolic_bp,
+                "spo2": assessment.spo2,
+                "temperature": assessment.temperature,
+                "pain_score": assessment.pain_score,
+                "chief_complaint": assessment.chief_complaint,
+                "clinical_notes": assessment.clinical_notes,
+                "severity": assessment.severity,
+            } if assessment else None,
+        })
+    return response
 
 
 @contract_router.post("/hospitals/{hospital_id}/capacity")

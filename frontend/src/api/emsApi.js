@@ -17,6 +17,7 @@ export const createAmbulance = (payload) => apiPost('/api/ambulances/', payload)
 export const updateAmbulance = (ambulanceId, payload) => apiPut(`/api/ambulances/${ambulanceId}`, payload)
 export const patchAmbulanceTelemetry = (ambulanceId, telemetry) => apiPatch(`/api/ambulances/${ambulanceId}/telemetry`, telemetry)
 export const getCurrentDispatchForUnit = (unitId) => apiGet(`/api/v1/units/${unitId}/dispatch/current`)
+export const getCurrentParamedicDispatch = () => apiGet('/api/v1/paramedics/dispatch/current')
 
 export const getDispatchBoard = () => apiGet('/api/dispatch/')
 export const getDispatchRouteForAmbulance = (ambulanceId) => apiGet(`/api/dispatch/route/ambulance/${ambulanceId}`)

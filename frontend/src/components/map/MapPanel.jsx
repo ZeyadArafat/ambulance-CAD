@@ -20,6 +20,11 @@ const FALLBACK_UNITS = [
   [30.0456, 31.2648],
   [30.0598, 31.2283],
 ]
+const FALLBACK_HOSPITALS = [
+  [30.056, 31.225],
+  [30.071, 31.29],
+  [29.982, 31.27],
+]
 
 const normalizeCoordinate = (value, axis) => {
   const num = Number(value)
@@ -42,7 +47,7 @@ const getMarkerPosition = (item, index, fallback) => {
   return fallback[index % fallback.length]
 }
 
-export default function MapPanel({ units = [], incidents = [], className = '', title = 'LIVE CAD MAP', showControls = true }) {
+export default function MapPanel({ units = [], incidents = [], hospitals = [], className = '', title = 'LIVE CAD MAP', showControls = true }) {
   const mapRef = useRef(null)
   const mapInstanceRef = useRef(null)
   const layerGroupRef = useRef(null)
@@ -117,10 +122,25 @@ export default function MapPanel({ units = [], incidents = [], className = '', t
       marker.addTo(layerGroup)
     })
 
-    if (incidents.length || units.length) {
+    hospitals.slice(0, 20).forEach((hospital, index) => {
+      const position = getMarkerPosition(hospital, index, FALLBACK_HOSPITALS)
+      const marker = L.circleMarker(position, {
+        radius: 7,
+        color: '#0B0F14',
+        weight: 2,
+        fillColor: '#A78BFA',
+        fillOpacity: 0.95,
+      })
+
+      marker.bindTooltip(hospital.name || hospital.hospital_name || hospital.hospital_code || `Hospital ${index + 1}`)
+      marker.addTo(layerGroup)
+    })
+
+    if (incidents.length || units.length || hospitals.length) {
       const validPoints = [
         ...incidents.slice(0, 12).map((incident, index) => getMarkerPosition(incident, index, FALLBACK_INCIDENTS)),
         ...units.slice(0, 20).map((unit, index) => getMarkerPosition(unit, index, FALLBACK_UNITS)),
+        ...hospitals.slice(0, 20).map((hospital, index) => getMarkerPosition(hospital, index, FALLBACK_HOSPITALS)),
       ].filter(Boolean)
 
       if (validPoints.length) {
@@ -128,13 +148,13 @@ export default function MapPanel({ units = [], incidents = [], className = '', t
         map.fitBounds(bounds.pad(0.35), { animate: false, maxZoom: 13 })
       }
     }
-  }, [incidents, units])
+  }, [incidents, units, hospitals])
 
   const panelLabel = useMemo(() => showControls ? 'LIVE LOCATION VIEW' : 'LOCATION VIEW', [showControls])
 
   return <div className={`relative overflow-hidden border border-[#222B3A] bg-[#0C141D] ${className}`}>
     <div className="absolute left-0 right-0 top-0 z-10 flex items-center justify-between border-b border-[#222B3A] bg-[#121620]/90 px-3 py-2"><span className="flex items-center gap-2 text-[10px] font-bold tracking-[.12em]"><Map size={13} className="text-[#38BDF8]" />{title}</span><span className="text-[10px] text-[#7E8A9A]">{panelLabel}</span></div>
     <div ref={mapRef} className="h-full w-full" />
-    <div className="pointer-events-none absolute bottom-3 left-3 right-3 z-[500] flex items-end justify-between"><div className="cad-panel pointer-events-auto px-3 py-2 text-[9px] text-[#7E8A9A]"><div className="flex gap-3"><span>• INCIDENT</span><span>◆ UNIT</span><span>OSM</span></div></div>{showControls && <div className="pointer-events-auto flex gap-2" aria-label="Map status indicators"><span className="cad-panel p-2 text-[#7E8A9A]"><LocateFixed size={14} /></span><span className="cad-panel p-2 text-[#7E8A9A]"><Navigation size={14} /></span></div>}</div>
+    <div className="pointer-events-none absolute bottom-3 left-3 right-3 z-[500] flex items-end justify-between"><div className="cad-panel pointer-events-auto px-3 py-2 text-[9px] text-[#7E8A9A]"><div className="flex gap-3"><span>• INCIDENT</span><span>◆ UNIT</span><span>▲ HOSPITAL</span><span>OSM</span></div></div>{showControls && <div className="pointer-events-auto flex gap-2" aria-label="Map status indicators"><span className="cad-panel p-2 text-[#7E8A9A]"><LocateFixed size={14} /></span><span className="cad-panel p-2 text-[#7E8A9A]"><Navigation size={14} /></span></div>}</div>
   </div>
 }

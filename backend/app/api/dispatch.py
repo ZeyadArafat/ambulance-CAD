@@ -6,9 +6,9 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import Ambulance, CrewMember, Dispatch, DispatchAssignment, Incident
+from ..models import Ambulance, CrewMember, Dispatch, DispatchAssignment, Incident, Staff
 from ..models import DispatchDestination, DispatchMessage, Hospital, User, utc_now
-from ..auth import current_user
+from ..auth import current_user, user_roles
 from .schemas import DispatchInput, DispatchPatch, DestinationInput, MessageInput
 from .router_helpers import get_or_404
 from ..services.dispatch_service import dispatch_ambulance, recommend_ambulances, transition_dispatch
@@ -274,7 +274,52 @@ def contract_current_dispatch(unit_id: UUID, db: Session = Depends(get_db), _: U
     assignment = db.query(DispatchAssignment).join(Dispatch, Dispatch.dispatch_id == DispatchAssignment.dispatch_id).filter(DispatchAssignment.ambulance_id == unit_id, Dispatch.dispatch_status.notin_(["completed", "cancelled"])).order_by(Dispatch.assigned_at.desc()).first()
     if not assignment:
         raise HTTPException(status_code=404, detail="No active dispatch")
-    return db.query(Dispatch).filter(Dispatch.dispatch_id == assignment.dispatch_id).first()
+    dispatch = db.query(Dispatch).filter(Dispatch.dispatch_id == assignment.dispatch_id).first()
+    return {
+        "dispatch_id": dispatch.dispatch_id,
+        "incident_id": dispatch.incident_id,
+        "dispatch_status": dispatch.dispatch_status,
+        "eta_minutes": dispatch.eta_minutes,
+        "assignment_id": assignment.assignment_id,
+        "ambulance_id": assignment.ambulance_id,
+        "crew_member_id": assignment.crew_member_id,
+    }
+
+
+@contract_router.get("/paramedics/dispatch/current")
+def contract_paramedic_dispatch(db: Session = Depends(get_db), user: User = Depends(current_user)):
+    if "paramedic" not in user_roles(db, user.user_id):
+        raise HTTPException(status_code=403, detail="Paramedic role required")
+    assignment = db.query(DispatchAssignment).join(
+        CrewMember, CrewMember.crew_member_id == DispatchAssignment.crew_member_id
+    ).join(
+        Staff, Staff.staff_id == CrewMember.staff_id
+    ).join(
+        Dispatch, Dispatch.dispatch_id == DispatchAssignment.dispatch_id
+    ).filter(
+        Staff.user_id == user.user_id,
+        CrewMember.status == "active",
+        Dispatch.dispatch_status.notin_(["completed", "cancelled"]),
+    ).order_by(Dispatch.assigned_at.desc()).first()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="No active paramedic dispatch")
+    dispatch = db.query(Dispatch).filter(Dispatch.dispatch_id == assignment.dispatch_id).first()
+    incident = db.query(Incident).filter(Incident.incident_id == dispatch.incident_id).first()
+    ambulance = db.query(Ambulance).filter(Ambulance.ambulance_id == assignment.ambulance_id).first()
+    destination = db.query(DispatchDestination).filter(DispatchDestination.dispatch_id == dispatch.dispatch_id).first()
+    return {
+        "dispatch_id": dispatch.dispatch_id,
+        "incident_id": dispatch.incident_id,
+        "dispatch_status": dispatch.dispatch_status,
+        "eta_minutes": dispatch.eta_minutes,
+        "assignment_id": assignment.assignment_id,
+        "ambulance_id": ambulance.ambulance_id,
+        "ambulance_code": ambulance.ambulance_code,
+        "crew_member_id": assignment.crew_member_id,
+        "hospital_id": destination.hospital_id if destination else None,
+        "hospital_acknowledged_at": destination.acknowledged_at if destination else None,
+        "incident": incident,
+    }
 
 
 @contract_router.post("/routing/nearest-unit")

@@ -64,12 +64,10 @@ async function request(endpoint, options = {}) {
       window.dispatchEvent(new Event('auth:unauthorized'))
     }
 
-    throw new Error(
-      payload?.detail?.[0]?.msg ||
-      payload?.detail ||
-      payload?.message ||
-      `API Error: ${response.status}`
-    )
+    const validationDetail = Array.isArray(payload?.detail)
+      ? payload.detail.map((item) => `${item.loc?.join('.') || 'request'}: ${item.msg}`).join('; ')
+      : payload?.detail
+    throw new Error(validationDetail || payload?.message || `API Error: ${response.status}`)
   }
 
   return payload
