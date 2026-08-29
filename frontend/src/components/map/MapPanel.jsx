@@ -47,7 +47,7 @@ const getMarkerPosition = (item, index, fallback) => {
   return fallback[index % fallback.length]
 }
 
-export default function MapPanel({ units = [], incidents = [], hospitals = [], className = '', title = 'LIVE CAD MAP', showControls = true }) {
+export default function MapPanel({ units = [], incidents = [], hospitals = [], route = null, focusPoints = null, className = '', title = 'LIVE CAD MAP', showControls = true }) {
   const mapRef = useRef(null)
   const mapInstanceRef = useRef(null)
   const layerGroupRef = useRef(null)
@@ -89,6 +89,34 @@ export default function MapPanel({ units = [], incidents = [], hospitals = [], c
     if (!map || !layerGroup) return
 
     layerGroup.clearLayers()
+    console.log('MapPanel rendering with:', { route, unitsCount: units.length, incidentsCount: incidents.length, hospitalsCount: hospitals.length })
+
+    // Draw route if provided
+    if (route && Array.isArray(route.coordinates) && route.coordinates.length > 0) {
+      console.log('Drawing route with', route.coordinates.length, 'points')
+      const routeCoordinates = route.coordinates.map((coord) => {
+        console.log('Route coord raw:', coord, '-> converted to:', [coord[1], coord[0]])
+        return [coord[1], coord[0]]
+      })
+      console.log('Final route coordinates:', routeCoordinates)
+      const polyline = L.polyline(routeCoordinates, {
+        color: '#38BDF8',
+        weight: 3,
+        opacity: 0.8,
+        dashArray: '5, 5',
+        lineCap: 'round',
+        lineJoin: 'round',
+      })
+      polyline.addTo(layerGroup)
+      console.log('✓ Route polyline added to map')
+    } else {
+      console.log('No route to display:', { 
+        routeExists: !!route,
+        hasCoordinates: !!route?.coordinates,
+        coordinateCount: route?.coordinates?.length || 0,
+        isArray: Array.isArray(route?.coordinates)
+      })
+    }
 
     incidents.slice(0, 12).forEach((incident, index) => {
       const position = getMarkerPosition(incident, index, FALLBACK_INCIDENTS)
@@ -136,19 +164,20 @@ export default function MapPanel({ units = [], incidents = [], hospitals = [], c
       marker.addTo(layerGroup)
     })
 
-    if (incidents.length || units.length || hospitals.length) {
-      const validPoints = [
-        ...incidents.slice(0, 12).map((incident, index) => getMarkerPosition(incident, index, FALLBACK_INCIDENTS)),
-        ...units.slice(0, 20).map((unit, index) => getMarkerPosition(unit, index, FALLBACK_UNITS)),
-        ...hospitals.slice(0, 20).map((hospital, index) => getMarkerPosition(hospital, index, FALLBACK_HOSPITALS)),
-      ].filter(Boolean)
+    // Focus on provided points or all points
+    const pointsToFocus = focusPoints || [
+      ...incidents.slice(0, 12).map((incident, index) => getMarkerPosition(incident, index, FALLBACK_INCIDENTS)),
+      ...units.slice(0, 20).map((unit, index) => getMarkerPosition(unit, index, FALLBACK_UNITS)),
+      ...hospitals.slice(0, 20).map((hospital, index) => getMarkerPosition(hospital, index, FALLBACK_HOSPITALS)),
+    ]
 
-      if (validPoints.length) {
-        const bounds = L.latLngBounds(validPoints)
-        map.fitBounds(bounds.pad(0.35), { animate: false, maxZoom: 13 })
-      }
+    const validPoints = pointsToFocus.filter(Boolean)
+
+    if (validPoints.length) {
+      const bounds = L.latLngBounds(validPoints)
+      map.fitBounds(bounds.pad(0.35), { animate: false, maxZoom: 13 })
     }
-  }, [incidents, units, hospitals])
+  }, [incidents, units, hospitals, route, focusPoints])
 
   const panelLabel = useMemo(() => showControls ? 'LIVE LOCATION VIEW' : 'LOCATION VIEW', [showControls])
 

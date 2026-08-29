@@ -32,6 +32,7 @@ export const sendDispatchMessage = (dispatchId, payload) => apiPost(`/api/v1/dis
 export const getNearestUnit = (payload) => apiPost('/api/v1/routing/nearest-unit', payload)
 export const getRouteEta = (payload) => apiPost('/api/v1/routing/eta', payload)
 export const getNavigation = (payload) => apiPost('/api/v1/routing/navigation', payload)
+export const getRoute = (payload) => apiPost('/api/v1/routing/route', payload)
 export const getDispatchRecommendationV1 = (incidentId) => apiGet(`/api/v1/incidents/${incidentId}/recommendation`)
 
 export const listCalls = () => apiGet('/api/calls/')

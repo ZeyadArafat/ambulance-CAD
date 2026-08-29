@@ -315,6 +315,9 @@ def contract_paramedic_dispatch(db: Session = Depends(get_db), user: User = Depe
         "assignment_id": assignment.assignment_id,
         "ambulance_id": ambulance.ambulance_id,
         "ambulance_code": ambulance.ambulance_code,
+        "ambulance_type": ambulance.ambulance_type,
+        "ambulance_latitude": float(ambulance.current_latitude) if ambulance.current_latitude else None,
+        "ambulance_longitude": float(ambulance.current_longitude) if ambulance.current_longitude else None,
         "crew_member_id": assignment.crew_member_id,
         "hospital_id": destination.hospital_id if destination else None,
         "hospital_acknowledged_at": destination.acknowledged_at if destination else None,
@@ -342,3 +345,42 @@ async def contract_routing_navigation(unit_id: UUID, destination: str, db: Sessi
     end_lat, end_lng = (float(value) for value in destination.split(","))
     route = await get_route(float(unit.current_latitude), float(unit.current_longitude), end_lat, end_lng)
     return {"unit_id": unit_id, "coordinates": route.get("coordinates", []), "eta_minutes": round(route["duration_minutes"], 1)}
+
+
+@contract_router.post("/routing/route")
+async def contract_routing_route(payload: dict, _: User = Depends(current_user)):
+    start_lat = float(payload.get("start_lat", 0))
+    start_lon = float(payload.get("start_lon", 0))
+    end_lat = float(payload.get("end_lat", 0))
+    end_lon = float(payload.get("end_lon", 0))
+    
+    print(f"[ROUTE] Request: start=({start_lat}, {start_lon}) end=({end_lat}, {end_lon})")
+    
+    try:
+        route = await get_route(start_lat, start_lon, end_lat, end_lon)
+        print(f"[ROUTE] Got route: {len(route.get('coordinates', []))} points, {route.get('distance_km')} km, {route.get('duration_minutes')} min")
+        result = {
+            "coordinates": route.get("coordinates", []),
+            "distance_km": round(route.get("distance_km", 0), 2),
+            "duration_minutes": round(route.get("duration_minutes", 0), 1),
+        }
+        print(f"[ROUTE] Returning: coordinates length={len(result['coordinates'])}")
+        return result
+    except Exception as e:
+        print(f"[ROUTE] Error: {e}")
+        raise
+
+
+@contract_router.get("/routing/test")
+async def test_routing(_: User = Depends(current_user)):
+    """Quick test route endpoint"""
+    try:
+        # Test route from Cairo unit to incident
+        route = await get_route(30.0448, 31.2361, 30.0472, 31.2385)
+        return {
+            "test": "success",
+            "coordinates_count": len(route.get("coordinates", [])),
+            "route": route
+        }
+    except Exception as e:
+        return {"test": "failed", "error": str(e)}
