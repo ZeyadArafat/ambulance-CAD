@@ -26,6 +26,7 @@ import {
   getAssessments,
   getCurrentParamedicDispatch,
   getHospitalCapacityBoard,
+  getRoute,
   patchDispatch,
 } from '../../api/emsApi'
 
@@ -199,15 +200,20 @@ export default function Paramedic() {
 
       try {
         console.log('Fetching route from backend...')
-        const routeData = await emsApi.getRoute({
+        const routeData = await getRoute({
           start_lat: startLat,
           start_lon: startLon,
           end_lat: endLat,
           end_lon: endLon,
         })
         console.log('Route data received:', routeData)
-        console.log('  - Coordinates count:', routeData.coordinates?.length)
-        setRoute(routeData)
+        console.log('  - Coordinates count:', routeData?.coordinates?.length)
+
+        const normalizedRoute = Array.isArray(routeData?.coordinates) && routeData.coordinates.length > 0
+          ? routeData
+          : null
+
+        setRoute(normalizedRoute)
       } catch (error) {
         console.error('Error calculating route:', error)
         setRoute(null)
