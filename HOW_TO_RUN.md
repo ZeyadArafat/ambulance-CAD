@@ -25,12 +25,14 @@ Install these on the machine hosting the project:
 - Docker Compose
 - Node.js 18+
 - npm
+- osrm routing data
 
 If you are running on Windows, make sure Docker Desktop is running before starting the containers.
 
 ---
 
-## 2. Clone the project
+## 2. Clone the project and download the routing data
+
 
 ```bash
 git clone <your-repository-url>
@@ -42,6 +44,9 @@ If you already have the project, go to the project folder:
 ```bash
 cd ambulance-CAD
 ```
+
+routing data: https://drive.google.com/drive/folders/1nDhTnrDztT7B1Ptozmd_O76lYNlU6ygx?usp=drive_link
+download this folder and put it inside the infrastructure folder
 
 ---
 
