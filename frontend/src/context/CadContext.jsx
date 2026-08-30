@@ -365,13 +365,15 @@ export function CadProvider({ children }) {
     }
   })
 
-  const loginAs = async (roleKey, username = 'Demo User', password = '') => {
+  const loginAs = async (username = 'Demo User', password = '') => {
+    const normalizedUsername = String(username || 'Demo User').trim()
+
     if (!password) {
       return { success: false, message: 'PASSWORD is required.' }
     }
 
     try {
-      const tokenResponse = await loginApi(username.trim(), password)
+      const tokenResponse = await loginApi(normalizedUsername, password)
       const accessToken = tokenResponse?.access_token
 
       if (!accessToken) {
@@ -391,7 +393,7 @@ export function CadProvider({ children }) {
 
       const loggedInUser = {
         ...user,
-        name: profile.username || username.trim() || user.name,
+        name: profile.username || normalizedUsername || user.name,
         backendProfile: profile,
       }
 

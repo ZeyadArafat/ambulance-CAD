@@ -1,59 +1,23 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Eye, EyeOff, ShieldAlert } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useCad } from '../context/CadContext'
 
-const roles = [
-  {
-    value: 'call-taker',
-    label: 'Call Taker',
-    description: 'Receive and document emergency calls.',
-  },
-  {
-    value: 'dispatcher',
-    label: 'Dispatcher',
-    description: 'Manage incidents and dispatch response units.',
-  },
-  {
-    value: 'paramedic',
-    label: 'Paramedic',
-    description: 'Manage assigned emergency response and patient status.',
-  },
-  {
-    value: 'hospital',
-    label: 'Hospital',
-    description: 'Manage incoming patients and hospital capacity.',
-  },
-  {
-    value: 'operations',
-    label: 'Operations Supervisor',
-    description: 'Monitor operations and resource allocation.',
-  },
-  {
-    value: 'fleet',
-    label: 'Fleet / Maintenance',
-    description: 'Monitor ambulance fleet and maintenance status.',
-  },
-  {
-    value: 'admin',
-    label: 'Administrator',
-    description: 'Manage users, roles, configuration and audit records.',
-  },
-]
-
 export default function Login() {
   const navigate = useNavigate()
-  const { loginAs } = useCad()
+  const { loginAs, currentUser } = useCad()
 
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [role, setRole] = useState('')
-
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const selectedRole = roles.find((item) => item.value === role)
+  useEffect(() => {
+    if (currentUser) {
+      navigate(`/${currentUser.roleKey}`, { replace: true })
+    }
+  }, [currentUser, navigate])
 
   const handleSubmit = async (event) => {
     event.preventDefault()
@@ -70,14 +34,9 @@ export default function Login() {
       return
     }
 
-    if (!role) {
-      setError('Please select your operational role.')
-      return
-    }
-
     setLoading(true)
 
-    const result = await loginAs(role, username, password)
+    const result = await loginAs(username, password)
 
     if (!result?.success) {
       setLoading(false)
@@ -154,7 +113,7 @@ export default function Login() {
             </h1>
 
             <p className="text-xs text-[#7E8A9A] mt-1">
-              Authenticate to access your assigned operational workspace.
+              Your role is detected automatically after authentication.
             </p>
 
           </div>
@@ -244,54 +203,6 @@ export default function Login() {
 
               </div>
 
-              {/* ROLE */}
-              <div>
-
-                <label className="block text-[10px] font-bold tracking-[0.14em] text-[#AAB4C3] mb-2">
-                  SELECT ROLE
-                </label>
-
-                <select
-                  value={role}
-                  onChange={(event) => {
-                    setRole(event.target.value)
-                    setError('')
-                  }}
-                  className="w-full h-10 px-3 bg-[#0F141D] border border-[#222B3A] text-sm text-[#F5F7FA] outline-none focus:border-[#3B82F6] cursor-pointer"
-                >
-
-                  <option value="">
-                    Select your operational role
-                  </option>
-
-                  {roles.map((item) => (
-                    <option
-                      key={item.value}
-                      value={item.value}
-                    >
-                      {item.label}
-                    </option>
-                  ))}
-
-                </select>
-
-                {/* ROLE DESCRIPTION */}
-                {selectedRole && (
-                  <div className="mt-2 px-3 py-2 border border-[#222B3A] bg-[#0F141D]">
-
-                    <div className="text-[10px] font-bold text-[#38BDF8]">
-                      {selectedRole.label}
-                    </div>
-
-                    <div className="text-[10px] text-[#7E8A9A] mt-0.5">
-                      {selectedRole.description}
-                    </div>
-
-                  </div>
-                )}
-
-              </div>
-
               {/* ERROR */}
               {error && (
                 <div className="border border-[#EF4444]/40 bg-[#EF4444]/10 px-3 py-2 flex items-center gap-2">
@@ -319,7 +230,7 @@ export default function Login() {
 
                 <div className="flex justify-between text-[9px] text-[#596474]">
                   <span>EMS CAD ENVIRONMENT</span>
-                  <span>BACKEND AUTHENTICATION REQUIRED</span>
+                  <span>ROLE DETECTION ENABLED</span>
                 </div>
 
               </div>
