@@ -47,7 +47,19 @@ const getMarkerPosition = (item, index, fallback) => {
   return fallback[index % fallback.length]
 }
 
-export default function MapPanel({ units = [], incidents = [], hospitals = [], route = null, focusPoints = null, className = '', title = 'LIVE CAD MAP', showControls = true }) {
+export default function MapPanel({
+  units = [],
+  incidents = [],
+  hospitals = [],
+  route = null,
+  focusPoints = null,
+  className = '',
+  title = 'LIVE CAD MAP',
+  showControls = true,
+  selectedLocation = null,
+  mapPinMode = false,
+  onMapClick = null,
+}) {
   const mapRef = useRef(null)
   const mapInstanceRef = useRef(null)
   const layerGroupRef = useRef(null)
@@ -74,13 +86,24 @@ export default function MapPanel({ units = [], incidents = [], hospitals = [], r
     mapInstanceRef.current = map
     layerGroupRef.current = layerGroup
 
+    if (typeof onMapClick === 'function') {
+      map.on('click', (event) => {
+        if (!mapPinMode) return
+
+        onMapClick({
+          latitude: event.latlng.lat,
+          longitude: event.latlng.lng,
+        })
+      })
+    }
+
     return () => {
       layerGroup.clearLayers()
       map.remove()
       mapInstanceRef.current = null
       layerGroupRef.current = null
     }
-  }, [])
+  }, [mapPinMode, onMapClick])
 
   useEffect(() => {
     const map = mapInstanceRef.current
@@ -164,6 +187,19 @@ export default function MapPanel({ units = [], incidents = [], hospitals = [], r
       marker.addTo(layerGroup)
     })
 
+    if (selectedLocation && Number.isFinite(Number(selectedLocation.latitude)) && Number.isFinite(Number(selectedLocation.longitude))) {
+      const selectedPosition = [Number(selectedLocation.latitude), Number(selectedLocation.longitude)]
+      const selectedMarker = L.circleMarker(selectedPosition, {
+        radius: 9,
+        color: '#0B0F14',
+        weight: 2,
+        fillColor: '#F59E0B',
+        fillOpacity: 1,
+      })
+      selectedMarker.bindTooltip(selectedLocation.label || 'Incident location')
+      selectedMarker.addTo(layerGroup)
+    }
+
     // Focus on provided points or all points
     const pointsToFocus = focusPoints || [
       ...incidents.slice(0, 12).map((incident, index) => getMarkerPosition(incident, index, FALLBACK_INCIDENTS)),
@@ -173,11 +209,15 @@ export default function MapPanel({ units = [], incidents = [], hospitals = [], r
 
     const validPoints = pointsToFocus.filter(Boolean)
 
+    if (selectedLocation && Number.isFinite(Number(selectedLocation.latitude)) && Number.isFinite(Number(selectedLocation.longitude))) {
+      validPoints.push([Number(selectedLocation.latitude), Number(selectedLocation.longitude)])
+    }
+
     if (validPoints.length) {
       const bounds = L.latLngBounds(validPoints)
       map.fitBounds(bounds.pad(0.35), { animate: false, maxZoom: 13 })
     }
-  }, [incidents, units, hospitals, route, focusPoints])
+  }, [incidents, units, hospitals, route, focusPoints, selectedLocation])
 
   const panelLabel = useMemo(() => showControls ? 'LIVE LOCATION VIEW' : 'LOCATION VIEW', [showControls])
 

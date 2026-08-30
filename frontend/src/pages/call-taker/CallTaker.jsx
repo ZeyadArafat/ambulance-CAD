@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2, FilePlus2, MapPinned, Phone, RotateCcw, Send, User } from 'lucide-react'
 import ActionButton from '../../components/common/ActionButton'
 import IncidentCard from '../../components/incidents/IncidentCard'
@@ -16,6 +16,54 @@ const priorities = [
 ]
 
 const emptyForm = { caller: '', phone: '', location: '', chiefComplaint: '', narrative: '', priority: '' }
+
+const geocodeAddress = async (address) => {
+  const query = String(address || '').trim()
+
+  if (!query) return null
+
+  try {
+    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(query + ', Egypt')}&limit=1`, {
+      headers: {
+        Accept: 'application/json',
+        'Accept-Language': 'en',
+      },
+    })
+
+    if (!response.ok) return null
+
+    const results = await response.json()
+    const match = Array.isArray(results) ? results[0] : null
+
+    if (!match) return null
+
+    return {
+      latitude: Number(match.lat),
+      longitude: Number(match.lon),
+      label: match.display_name || query,
+    }
+  } catch {
+    return null
+  }
+}
+
+const reverseGeocode = async (latitude, longitude) => {
+  try {
+    const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`, {
+      headers: {
+        Accept: 'application/json',
+        'Accept-Language': 'en',
+      },
+    })
+
+    if (!response.ok) return null
+
+    const result = await response.json()
+    return result?.display_name || null
+  } catch {
+    return null
+  }
+}
 
 function isSimilarLocation(first, second) {
   const tokens = (value) => value.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter((word) => word.length > 2 && !['sector', 'street', 'road', 'avenue'].includes(word))
@@ -40,6 +88,29 @@ export default function CallTaker() {
   const [noteError, setNoteError] = useState('')
   const [noteSuccess, setNoteSuccess] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [pinMode, setPinMode] = useState(false)
+  const [selectedLocation, setSelectedLocation] = useState(null)
+
+  useEffect(() => {
+    const query = form.location.trim()
+
+    if (!query) {
+      setSelectedLocation(null)
+      return undefined
+    }
+
+    let cancelled = false
+
+    geocodeAddress(query).then((location) => {
+      if (!cancelled && location) {
+        setSelectedLocation(location)
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [form.location])
 
   const active = useMemo(() => incidents.filter((incident) => incident.status !== 'Completed').slice(0, 8), [incidents])
   const selectedIncident = incidents.find((incident) => incident.id === selectedId) || active[0]
@@ -72,7 +143,36 @@ export default function CallTaker() {
     setSubmitting(false)
   }
 
-  const clearForm = () => { setForm(emptyForm); setErrors({}); setCreatedIncident(null) }
+  const clearForm = () => {
+    setForm(emptyForm)
+    setErrors({})
+    setCreatedIncident(null)
+    setSelectedLocation(null)
+    setPinMode(false)
+  }
+
+  const handleMapPin = async ({ latitude, longitude }) => {
+    setPinMode(false)
+    const gatheredAddress = await reverseGeocode(latitude, longitude)
+    const nextLocation = gatheredAddress || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`
+
+    setSelectedLocation({
+      latitude,
+      longitude,
+      label: nextLocation,
+    })
+
+    setForm((current) => ({
+      ...current,
+      location: nextLocation,
+    }))
+
+    setErrors((current) => ({
+      ...current,
+      location: undefined,
+    }))
+  }
+
   const addSupplementaryNote = async () => {
     if (!noteIncident) return setNoteError('Select an active incident before adding a note.')
     if (!note.trim()) return setNoteError('Enter a note before appending it to the incident log.')
@@ -87,8 +187,20 @@ export default function CallTaker() {
         <header className="flex min-h-14 shrink-0 items-center justify-between border-b border-[#222B3A] px-4"><div><h1 className="text-sm font-bold tracking-[0.1em] text-[#F5F7FA]">NEW INCIDENT INTAKE</h1><p className="mt-1 text-[10px] text-[#7E8A9A]">Create a CAD incident and place it in the active dispatch queue.</p></div><span className="border border-[#222B3A] bg-[#0E131B] px-2 py-1 font-mono text-[9px] font-bold text-[#7E8A9A]">NEW</span></header>
         <div className="flex min-h-0 flex-1 flex-col p-4">
           <div className="grid grid-cols-2 gap-3"><Field label="CALLER NAME" icon={User} value={form.caller} error={errors.caller} onChange={(value) => updateField('caller', value)} /><Field label="CALLBACK NUMBER" icon={Phone} value={form.phone} error={errors.phone} onChange={(value) => updateField('phone', value)} /></div>
-          <div className="mt-3"><Field label="INCIDENT LOCATION" icon={MapPinned} value={form.location} error={errors.location} onChange={(value) => updateField('location', value)} /></div>
-          <div className="mt-3"><div className="mb-1 flex items-center justify-between"><span className="cad-label mb-0">INCIDENT SITE VISUALIZER</span><span className="text-[9px] font-semibold tracking-wider text-[#7E8A9A]">LOCATION PREVIEW</span></div><MapPanel showControls={false} className="h-56 w-full" title="INCIDENT SITE" incidents={duplicate ? [duplicate] : selectedIncident ? [selectedIncident] : []} /></div>
+          <div className="mt-3">
+            <div className="mb-1 flex items-center justify-between">
+              <span className="cad-label mb-0">INCIDENT LOCATION</span>
+              <button
+                type="button"
+                onClick={() => setPinMode((value) => !value)}
+                className={`text-[9px] font-bold uppercase tracking-[0.12em] ${pinMode ? 'text-[#FCD34D]' : 'text-[#38BDF8]'}`}
+              >
+                {pinMode ? 'CANCEL PIN' : 'DROP PIN'}
+              </button>
+            </div>
+            <Field label="" icon={MapPinned} value={form.location} error={errors.location} onChange={(value) => updateField('location', value)} />
+          </div>
+          <div className="mt-3"><div className="mb-1 flex items-center justify-between"><span className="cad-label mb-0">INCIDENT SITE VISUALIZER</span><span className="text-[9px] font-semibold tracking-wider text-[#7E8A9A]">LOCATION PREVIEW</span></div><MapPanel showControls={false} className="h-56 w-full" title="INCIDENT SITE" incidents={duplicate ? [duplicate] : selectedIncident ? [selectedIncident] : []} selectedLocation={selectedLocation} mapPinMode={pinMode} onMapClick={handleMapPin} focusPoints={selectedLocation ? [[selectedLocation.latitude, selectedLocation.longitude]] : []} /></div>
           <div className="mt-3 grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-3"><Field label="CHIEF COMPLAINT" value={form.chiefComplaint} error={errors.chiefComplaint} onChange={(value) => updateField('chiefComplaint', value)} /><label className="block"><span className="cad-label">NARRATIVE / DETAILS</span><textarea value={form.narrative} onChange={(event) => updateField('narrative', event.target.value)} className={`h-16 w-full resize-none border bg-[#0E131B] px-3 py-2 text-[11px] leading-relaxed text-[#F5F7FA] outline-none focus:border-[#38BDF8] ${errors.narrative ? 'border-[#EF4444]' : 'border-[#222B3A]'}`} aria-invalid={Boolean(errors.narrative)} />{errors.narrative && <p className="mt-1 text-[10px] text-[#FCA5A5]">{errors.narrative}</p>}</label></div>
           <div className="mt-3"><div className="mb-1 flex items-center justify-between"><span className="cad-label mb-0">TRIAGE PRIORITY</span>{form.priority && <span className="text-[10px] font-bold text-[#38BDF8]">{form.priority} SELECTED</span>}</div><div className="grid grid-cols-5 gap-2">{priorities.map((item) => { const isSelected = form.priority === item.id; return <button key={item.id} type="button" aria-pressed={isSelected} onClick={() => updateField('priority', item.id)} className={`h-16 border px-2 text-left transition ${isSelected ? `${item.tone} ring-1 ring-[#F5F7FA]/20` : 'border-[#222B3A] bg-[#0E131B] hover:border-[#3A4759]'}`}><PriorityBadge priority={item.id} /><span className="mt-2 block text-[8px] leading-tight text-[#AAB4C3]">{item.label}</span></button> })}</div>{errors.priority && <p className="mt-1 text-[10px] text-[#FCA5A5]">{errors.priority}</p>}</div>
           <div className="mt-4 flex min-h-12 items-center gap-3 border-t border-[#222B3A] pt-3"><div className="mr-auto min-w-0 text-[10px]" aria-live="polite">{createdIncident ? <span className={`inline-flex items-center gap-1.5 ${createdIncident.backendPersisted ? 'text-[#86EFAC]' : 'text-[#FCD34D]'}`}><CheckCircle2 size={14} />{createdIncident.id} {createdIncident.backendPersisted ? 'submitted to dispatch' : 'saved locally; backend submission failed'} as {createdIncident.priority}.</span> : <span className="text-[#7E8A9A]">Required fields show inline feedback when missing.</span>}</div><ActionButton type="button" icon={RotateCcw} onClick={clearForm}>CLEAR FORM</ActionButton><ActionButton type="submit" icon={Send} variant="primary" className="min-w-[210px]" disabled={submitting}>{submitting ? 'SUBMITTING...' : 'SUBMIT TO DISPATCH'}</ActionButton></div>
